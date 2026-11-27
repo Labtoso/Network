@@ -1,26 +1,27 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  darkMode: "class",
-  content: [
-    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/lib/**/*.{js,ts,jsx,tsx,mdx}",
-  ],
+  content: ["./src/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
-      fontFamily: {
-        sans: ["var(--font-geist-sans)", "Inter", "system-ui", "sans-serif"],
-        mono: ["var(--font-jetbrains-mono)", "JetBrains Mono", "monospace"],
-      },
       colors: {
-        void: "#050505",
-        obsidian: "#0a0a0a",
-        panel: "var(--bg-panel)",
-        accent: "var(--accent)",
-        "accent-muted": "var(--accent-muted)",
-        border: "var(--border-color)",
+        bg: "rgb(var(--bg) / <alpha-value>)",
+        panel: "rgb(var(--panel) / <alpha-value>)",
+        line: "rgb(var(--line) / <alpha-value>)",
+        fg: "rgb(var(--fg) / <alpha-value>)",
+        dim: "rgb(var(--dim) / <alpha-value>)",
+        accent: "rgb(var(--accent) / <alpha-value>)",
+        accent2: "rgb(var(--accent2) / <alpha-value>)",
+        danger: "rgb(239 68 68 / <alpha-value>)",
+        warn: "rgb(245 158 11 / <alpha-value>)",
+        ok: "rgb(34 197 94 / <alpha-value>)",
+      },
+      fontFamily: {
+        sans: ["var(--font-geist-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["'JetBrains Mono Variable'", "ui-monospace", "monospace"],
+      },
+      boxShadow: {
+        glow: "0 0 40px rgb(var(--accent) / 0.12)",
       },
     },
   },

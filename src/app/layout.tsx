@@ -1,55 +1,31 @@
-import type { Metadata, Viewport } from "next";
-import { Geist, JetBrains_Mono } from "next/font/google";
+import "@fontsource-variable/jetbrains-mono";
 import "./globals.css";
+import { GeistSans } from "geist/font/sans";
+import type { Metadata, Viewport } from "next";
+import type { ReactNode } from "react";
 
-const geistSans = Geist({
-  subsets: ["latin"],
-  variable: "--font-geist-sans",
-  display: "swap",
-});
+const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains-mono",
-  display: "swap",
-});
+export const metadata: Metadata = {
+  title: "Network · Admin",
+  description: "AdGuard Home Steuerzentrale mit Roaming-Schutz, Block-Page-Studio und Live-Query-Log.",
+  manifest: `${base}/manifest.webmanifest`,
+  icons: { icon: `${base}/icon.svg`, apple: `${base}/icon-192.png` },
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Network" },
+  robots: { index: false, follow: false },
+};
 
 export const viewport: Viewport = {
   themeColor: "#050505",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 5,
+  viewportFit: "cover",
 };
 
-export const metadata: Metadata = {
-  title: "Labtoso Network // Zero-Trust, AdGuard 1:1 & Anti-Bypass Control Suite",
-  description:
-    "Zero-Trust Admin Panel, Bidirectional 1:1 AdGuard Home Mirror, 5G/Hotspot Roaming Anti-Bypass & Custom Block Page Studio (admin.labtoso.de).",
-  manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "LT Network",
-  },
-  icons: {
-    icon: "/icon.svg",
-    apple: "/icon.svg",
-  },
-};
-
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html
-      lang="de"
-      className={`dark ${geistSans.variable} ${jetbrainsMono.variable}`}
-    >
-      <body className="min-h-screen bg-[#050505] text-slate-100 font-sans selection:bg-sky-500/20 selection:text-sky-300">
-        {children}
-      </body>
+    <html lang="de" className={GeistSans.variable}>
+      <body className="font-sans">{children}</body>
     </html>
   );
 }

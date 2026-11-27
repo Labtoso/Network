@@ -1,5 +1,5 @@
-import AdminDashboard from "@/components/AdminDashboard";
+import { App } from "@/components/App";
 
-export default function HomePage() {
-  return <AdminDashboard />;
+export default function Page() {
+  return <App />;
 }

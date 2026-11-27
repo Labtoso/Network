@@ -1,0 +1,8 @@
+[Unit]
+Description=Labtoso Network DuckDNS Updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash __APP_DIR__/duckdns-update.sh
