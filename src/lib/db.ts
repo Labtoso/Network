@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { randomUUID } from "node:crypto";
 import { INITIAL_STATE, type NetworkControlState } from "@/lib/network-state";
 
 export * from "@/lib/network-state";
@@ -37,7 +38,7 @@ export function getNetworkState(): NetworkControlState {
 export function saveNetworkState(
   updater: (draft: NetworkControlState) => void
 ): NetworkControlState {
-  const current = getNetworkState();
+  const current = structuredClone(getNetworkState());
   updater(current);
   // Enforce Admin Whitelist Invariant: Admin devices can NEVER be paused or blocked
   for (const dev of current.devices) {
@@ -47,16 +48,20 @@ export function saveNetworkState(
       dev.blockedApps = [];
     }
   }
-  memoryState = current;
+  const file = getStateFilePath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporaryFile = `${file}.${randomUUID()}.tmp`;
   try {
-    const file = getStateFilePath();
-    const dir = path.dirname(file);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(file, JSON.stringify(current, null, 2), "utf8");
+    fs.writeFileSync(temporaryFile, JSON.stringify(current, null, 2), {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+    fs.renameSync(temporaryFile, file);
   } catch {
-    // In read-only container layers, memoryState holds the state
+    try { fs.rmSync(temporaryFile, { force: true }); } catch { /* Best effort. */ }
+    throw new Error("Die Panel-Daten konnten nicht gespeichert werden.");
   }
+  memoryState = current;
   return current;
 }

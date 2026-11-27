@@ -1,22 +1,8 @@
 import { getNetworkState, saveNetworkState } from "@/lib/db";
-
+import { getAdGuardConnection } from "@/lib/adguard-connection";
 import type { AdGuardDnsRewrite, AdGuardFilterList } from "@/lib/adguard-model";
 
 export * from "@/lib/adguard-model";
-
-function getAdGuardAuthHeaders(): HeadersInit {
-  const state = getNetworkState();
-  const user = process.env.ADGUARD_USER || state.policy.adguardUsername || "admin";
-  const pass = process.env.ADGUARD_PASSWORD || "";
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (user && pass) {
-    headers["Authorization"] =
-      "Basic " + Buffer.from(`${user}:${pass}`).toString("base64");
-  }
-  return headers;
-}
 
 /**
  * Sends a REST call to the live AdGuard Home instance (`/control/...`)
@@ -27,22 +13,17 @@ export async function callAdGuardApi(
   method: "GET" | "POST" = "GET",
   body?: unknown
 ): Promise<{ ok: boolean; data?: unknown; syncedLive: boolean }> {
-  const state = getNetworkState();
-  const baseUrl = (state.policy.adguardUrl || "http://192.168.178.67:3001").replace(
-    /\/+$/,
-    ""
-  );
+  const { baseUrl, headers } = getAdGuardConnection();
+  if (!baseUrl) return { ok: false, syncedLive: false };
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 1600);
     const res = await fetch(`${baseUrl}${endpointPath}`, {
       method,
-      headers: getAdGuardAuthHeaders(),
+      headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
-      signal: controller.signal,
+      redirect: "error",
+      signal: AbortSignal.timeout(3000),
       cache: "no-store",
     });
-    clearTimeout(timer);
     if (res.ok) {
       const contentType = res.headers.get("content-type") || "";
       const data = contentType.includes("application/json")
@@ -53,7 +34,7 @@ export async function callAdGuardApi(
   } catch {
     // Graceful local cache mirror fallback when AdGuard LAN is unreachable from cloud test
   }
-  return { ok: true, syncedLive: false };
+  return { ok: false, syncedLive: false };
 }
 
 /**

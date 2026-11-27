@@ -366,10 +366,13 @@ export default function AdminDashboard() {
         const data = await res.json();
         if (data.state) setControlState(data.state);
         if (data.toast) showToast(data.toast);
+        return true;
       }
+      showToast("Die Änderung konnte nicht gespeichert werden.");
     } catch {
       showToast("Fehler beim Speichern der Änderung.");
     }
+    return false;
   };
 
   const handleMutateAdGuard = async (payload: Record<string, unknown>) => {
@@ -727,7 +730,7 @@ export default function AdminDashboard() {
         policy={controlState.policy}
         devices={controlState.devices}
         onMutateControl={handleMutateControl}
-        onMutateAdGuard={handleMutateAdGuard}
+        onAdGuardPaired={(policy) => setControlState((state) => ({ ...state, policy }))}
       />
 
       {/* Foreground Content Layer */}
@@ -2246,7 +2249,7 @@ export default function AdminDashboard() {
             policy={controlState.policy}
             unblockRequests={controlState.unblockRequests}
             blockedStream={controlState.blockedStream}
-            onMutateControl={handleMutateControl}
+            onMutateControl={async (payload) => { await handleMutateControl(payload); }}
             onNotify={showToast}
           />
         )}
@@ -2258,7 +2261,7 @@ export default function AdminDashboard() {
           <BlockPageStudio
             theme={currentTheme}
             blockPage={controlState.blockPage}
-            onMutateControl={handleMutateControl}
+            onMutateControl={async (payload) => { await handleMutateControl(payload); }}
           />
         )}
 

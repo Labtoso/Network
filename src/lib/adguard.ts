@@ -2,19 +2,9 @@ import {
   BLOCKABLE_APPS,
   ClientDeviceProfile,
   DeviceCategory,
-  getNetworkState,
-  saveNetworkState,
 } from "@/lib/db";
-
-export interface AdGuardStatusResponse {
-  connected: boolean;
-  version: string;
-  dnsAddresses: string[];
-  protectionEnabled: boolean;
-  running: boolean;
-  latencyMs: number;
-  url: string;
-}
+import { getAdGuardConnection } from "@/lib/adguard-connection";
+import type { AdGuardStatusResponse } from "@/lib/adguard-model";
 
 const OUI_VENDOR_MAP: { prefix: string; vendor: string; type: DeviceCategory }[] = [
   { prefix: "F0:18:98", vendor: "Apple, Inc.", type: "apple" },
@@ -57,90 +47,63 @@ export function detectDeviceByMacOrName(
   return { vendor: "Network Endpoint", deviceType: "iot" };
 }
 
-function getAdGuardHeaders(): HeadersInit {
-  const state = getNetworkState();
-  const user = process.env.ADGUARD_USER || state.policy.adguardUsername || "admin";
-  const pass = process.env.ADGUARD_PASSWORD || "";
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (user && pass) {
-    headers["Authorization"] =
-      "Basic " + Buffer.from(`${user}:${pass}`).toString("base64");
+export async function checkAdGuardStatus(customUrl?: string, username?: string): Promise<AdGuardStatusResponse> {
+  const { baseUrl, headers } = getAdGuardConnection(customUrl, username);
+  if (!baseUrl) {
+    return { connected: false, url: "", error: "Gib eine gültige HTTP- oder HTTPS-Adresse ein." };
   }
-  return headers;
-}
 
-/**
- * Performs a live handshake with AdGuard Home (`/control/status`)
- * and falls back gracefully if unreachable from the current network.
- */
-export async function checkAdGuardStatus(customUrl?: string): Promise<AdGuardStatusResponse> {
-  const state = getNetworkState();
-  const baseUrl = (customUrl || state.policy.adguardUrl || "http://192.168.178.67:3001").replace(
-    /\/+$/,
-    ""
-  );
   const start = Date.now();
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 1800);
     const res = await fetch(`${baseUrl}/control/status`, {
-      headers: getAdGuardHeaders(),
-      signal: controller.signal,
+      headers,
+      redirect: "error",
+      signal: AbortSignal.timeout(3000),
       cache: "no-store",
     });
-    clearTimeout(timer);
-    const latencyMs = Math.max(1, Date.now() - start);
-    if (res.ok) {
-      const data = await res.json();
-      saveNetworkState((draft) => {
-        draft.policy.adguardUrl = baseUrl;
-        draft.policy.adguardConnected = true;
-        if (data.version) draft.policy.adguardVersion = data.version;
-      });
-      return {
-        connected: true,
-        version: data.version || "v0.107.79",
-        dnsAddresses: data.dns_addresses || ["192.168.178.67:53"],
-        protectionEnabled: data.protection_enabled ?? true,
-        running: data.running ?? true,
-        latencyMs,
-        url: baseUrl,
-      };
+    if (res.status === 401 || res.status === 403) {
+      const error = headers.Authorization
+        ? `AdGuard lehnt die hinterlegten Zugangsdaten ab (HTTP ${res.status}).`
+        : `AdGuard verlangt Zugangsdaten (HTTP ${res.status}). Prüfe ADGUARD_URL, ADGUARD_USER und ADGUARD_PASSWORD in der Serverkonfiguration.`;
+      return { connected: false, url: baseUrl, error };
     }
+    if (!res.ok) {
+      return { connected: false, url: baseUrl, error: `AdGuard-Statusabfrage fehlgeschlagen (HTTP ${res.status}).` };
+    }
+    const data = await res.json().catch(() => null);
+    if (typeof data?.version !== "string" || typeof data.running !== "boolean") {
+      return { connected: false, url: baseUrl, error: "Die Adresse liefert keinen gültigen AdGuard-Status." };
+    }
+    return {
+      connected: true,
+      version: data.version,
+      dnsAddresses: Array.isArray(data.dns_addresses) ? data.dns_addresses : [],
+      protectionEnabled: data.protection_enabled === true,
+      running: data.running,
+      latencyMs: Math.max(1, Date.now() - start),
+      url: baseUrl,
+    };
   } catch {
-    // When running outside the home LAN or in build test, return configured hybrid status
+    return { connected: false, url: baseUrl, error: "AdGuard Home ist vom Panel-Server aus nicht erreichbar." };
   }
-
-  return {
-    connected: true,
-    version: state.policy.adguardVersion || "v0.107.79 (HaGeZi Multi PRO + NSFW)",
-    dnsAddresses: ["192.168.178.67:53", "dot.labtoso.de:853", "admin.labtoso.de/api/dns-query"],
-    protectionEnabled: !state.policy.killSwitchActive,
-    running: true,
-    latencyMs: 3,
-    url: baseUrl,
-  };
 }
 
 /**
  * Pushes updated client name & blocked_services array to AdGuard Home (`/control/clients/update`)
  */
 export async function syncDeviceToAdGuard(device: ClientDeviceProfile): Promise<boolean> {
-  const state = getNetworkState();
-  const baseUrl = state.policy.adguardUrl.replace(/\/+$/, "");
+  const { baseUrl, headers } = getAdGuardConnection();
+  if (!baseUrl) return false;
   const adguardServices = device.blockedApps
     .map((appId) => BLOCKABLE_APPS.find((a) => a.id === appId)?.adguardServiceId)
     .filter(Boolean);
 
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 1600);
-    await fetch(`${baseUrl}/control/clients/update`, {
+    const response = await fetch(`${baseUrl}/control/clients/update`, {
       method: "POST",
-      headers: getAdGuardHeaders(),
-      signal: controller.signal,
+      headers,
+      redirect: "error",
+      signal: AbortSignal.timeout(1600),
       body: JSON.stringify({
         name: device.name,
         data: {
@@ -153,8 +116,7 @@ export async function syncDeviceToAdGuard(device: ClientDeviceProfile): Promise<
         },
       }),
     });
-    clearTimeout(timer);
-    return true;
+    return response.ok;
   } catch {
     return false;
   }

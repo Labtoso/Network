@@ -93,7 +93,7 @@ Reines Dark-Mode-Design (`#050505` / `#0a0a0a`) mit feinen `1px`-Borders, `Geist
 
 ## 🔐 Cloudflare Zero Trust & Google OAuth Einrichtung (`admin.labtoso.de`)
 
-Das Panel ist über **Cloudflare Access (Zero Trust)** geschützt und lässt über eine **Hard Access-Policy** ausschließlich **`sebirauch2022@gmail.com`** zu.
+Der öffentliche Zugriff benötigt einen DNS-Eintrag für `admin.labtoso.de`, eine Tunnel-Route und eine Cloudflare-Access-Policy für das erlaubte Konto. Ein Tunnel-Token allein richtet die öffentliche Adresse nicht ein. Im Heimnetz steht die lokale Adresse unter **Container → Summary → Notes**, sobald der LXC eine IP hat.
 
 ### Schritt 1: Cloudflare Tunnel (`cloudflared`) anlegen
 1. Öffne das [Cloudflare Zero Trust Dashboard](https://one.dash.cloudflare.com/) ➔ **Networks** ➔ **Tunnels**.
@@ -122,7 +122,7 @@ Das Panel ist über **Cloudflare Access (Zero Trust)** geschützt und lässt üb
    - **Policy name:** `Owner Only (Hard Lock)`
    - **Action:** `Allow`
    - **Include Rule:** Selector `Emails` ➔ Value: `sebirauch2022@gmail.com`
-5. Speichern. Das Backend validiert bei jedem Request automatisch den signierten Cloudflare-Header `Cf-Access-Authenticated-User-Email` sowie `Cf-Access-Jwt-Assertion` gegen `sebirauch2022@gmail.com`.
+5. Speichere die Policy. Prüfe den öffentlichen Zugriff aus einem privaten Browserfenster über Cloudflare Access.
 
 ---
 
@@ -134,11 +134,18 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
+### AdGuard Home verbinden
+
+1. Trage `ADGUARD_URL`, `ADGUARD_USER` und `ADGUARD_PASSWORD` in der Serverdatei `.env` ein. Die Adresse muss vom Panel aus erreichbar sein. Im nativen LXC liegt die Datei unter `/opt/network/.env`.
+2. Starte den Dienst im LXC mit `systemctl restart network-admin` neu. Bei Docker übernimmt `docker compose up -d` die geänderten Umgebungsvariablen.
+3. Öffne den Setup-Assistenten in den Einstellungen und prüfe die AdGuard-Verbindung mit derselben URL.
+
 ### Updates und Setup-Daten
 
-Der Proxmox-Installer aktiviert einen systemd-Timer, der etwa alle drei Minuten
-nach neuen Commits sucht. Ein fehlgeschlagener Build lässt die installierte
-Version aktiv und wird beim nächsten Lauf erneut versucht. Updates behalten
+Der optionale systemd-Timer sucht etwa alle drei Minuten nach neuen Commits.
+Ein fehlgeschlagener Build lässt die installierte Version aktiv. Startet
+der neue Dienst ohne erreichbares Panel, stellt der Updater den vorherigen
+Build wieder her. Das Update wird beim nächsten Lauf erneut versucht. Updates behalten
 die lokale Konfiguration und übernehmen bisherigen Assistentenstatus aus dem
 alten Standalone-Verzeichnis nach `data/network-state.json`.
 

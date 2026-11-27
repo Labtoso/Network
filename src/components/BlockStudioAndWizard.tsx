@@ -29,6 +29,7 @@ import {
   GlobalPolicySettings,
 } from "@/lib/network-state";
 import { ALLOWED_OWNER_EMAIL, PUBLIC_ZERO_TRUST_DOMAIN } from "@/lib/auth";
+import type { AdGuardStatusResponse } from "@/lib/adguard-model";
 
 interface BlockStudioProps {
   theme: ThemeConfig;
@@ -538,8 +539,8 @@ interface SetupWizardModalProps {
   onSelectTheme: (id: ThemeId) => void;
   policy: GlobalPolicySettings;
   devices: ClientDeviceProfile[];
-  onMutateControl: (payload: Record<string, unknown>) => Promise<void>;
-  onMutateAdGuard: (payload: Record<string, unknown>) => Promise<void>;
+  onMutateControl: (payload: Record<string, unknown>) => Promise<boolean>;
+  onAdGuardPaired: (policy: GlobalPolicySettings) => void;
 }
 
 export function SetupWizardModal({
@@ -550,14 +551,14 @@ export function SetupWizardModal({
   policy,
   devices,
   onMutateControl,
-  onMutateAdGuard,
+  onAdGuardPaired,
 }: SetupWizardModalProps) {
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [adguardUrlInput, setAdguardUrlInput] = useState(policy.adguardUrl);
   const [adguardUserInput, setAdguardUserInput] = useState(
     policy.adguardUsername || "admin"
   );
-  const [handshakeOk, setHandshakeOk] = useState(true);
+  const [handshake, setHandshake] = useState<AdGuardStatusResponse | null>(null);
   const [testingHandshake, setTestingHandshake] = useState(false);
 
   if (!open) return null;
@@ -565,16 +566,48 @@ export function SetupWizardModal({
     THEME_LIST.find((t) => t.id === themeId) || THEME_LIST[0];
 
   const handleFinishOrDismiss = async () => {
+    if (policy.onboardingCompleted) {
+      onClose();
+      return;
+    }
+    const saved = await onMutateControl({
+      action: "update_policy",
+      onboardingCompleted: true,
+    });
+    if (!saved) return;
     try {
       localStorage.setItem("labtoso-setup-completed", "true");
     } catch {
       // ignore
     }
-    await onMutateControl({
-      action: "update_policy",
-      onboardingCompleted: true,
-    });
     onClose();
+  };
+
+  const handleAdGuardHandshake = async () => {
+    setTestingHandshake(true);
+    setHandshake(null);
+    try {
+      const response = await fetch("/api/adguard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "handshake",
+          url: adguardUrlInput,
+          username: adguardUserInput,
+        }),
+      });
+      const data = await response.json();
+      if (data.status) {
+        setHandshake(data.status);
+        if (response.ok && data.status.connected && data.policy) onAdGuardPaired(data.policy);
+      } else {
+        setHandshake({ connected: false, url: adguardUrlInput, error: data.error || "Statusabfrage fehlgeschlagen." });
+      }
+    } catch {
+      setHandshake({ connected: false, url: adguardUrlInput, error: "Das Panel konnte die Statusabfrage nicht ausführen." });
+    } finally {
+      setTestingHandshake(false);
+    }
   };
 
   return (
@@ -735,8 +768,8 @@ export function SetupWizardModal({
               <div className="mt-2 p-3.5 rounded-xl bg-black/50 border border-white/10 text-xs font-mono space-y-1.5 text-zinc-300">
                 <div className="text-white font-bold">So verbindest du AdGuard Home (1:1 Live-Mirror):</div>
                 <div>1. Prüfe in ZimaOS / Proxmox, unter welcher IP &amp; welchem Port AdGuard Home läuft (Standard bei dir: <code className="text-white">http://192.168.178.67:3001</code>).</div>
-                <div>2. Trage die URL und deinen AdGuard-Login (<code className="text-white">admin</code>) unten ein.</div>
-                <div>3. Klicke auf <strong>„Live-Handshake prüfen“</strong> – das Panel verbindet sich sofort mit <code className="text-white">/control/status</code> und synchronisiert alle Sperrlisten, Rewrites und das Live-Query-Log.</div>
+                <div>2. Für eine geschützte Instanz hinterlege <code>ADGUARD_URL</code>, <code>ADGUARD_USER</code> und <code>ADGUARD_PASSWORD</code> in der Serverdatei <code>.env</code>. Starte danach den Panel-Dienst neu.</div>
+                <div>3. Trage dieselbe URL ein und prüfe die Verbindung. Das Panel übernimmt die Adresse nach erfolgreicher Antwort von <code>/control/status</code>.</div>
               </div>
             </div>
 
@@ -744,14 +777,18 @@ export function SetupWizardModal({
               <input
                 type="text"
                 value={adguardUrlInput}
-                onChange={(e) => setAdguardUrlInput(e.target.value)}
+                onChange={(e) => { setAdguardUrlInput(e.target.value); setHandshake(null); }}
+                disabled={testingHandshake}
+                aria-label="AdGuard-Adresse"
                 placeholder="http://192.168.178.67:3001"
                 className="sm:col-span-2 px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-xs font-mono text-white"
               />
               <input
                 type="text"
                 value={adguardUserInput}
-                onChange={(e) => setAdguardUserInput(e.target.value)}
+                onChange={(e) => { setAdguardUserInput(e.target.value); setHandshake(null); }}
+                disabled={testingHandshake}
+                aria-label="AdGuard-Benutzer"
                 placeholder="Benutzer (admin)"
                 className="px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-xs font-mono text-white"
               />
@@ -759,20 +796,8 @@ export function SetupWizardModal({
 
             <button
               type="button"
-              onClick={async () => {
-                setTestingHandshake(true);
-                await onMutateControl({
-                  action: "update_policy",
-                  adguardUrl: adguardUrlInput,
-                  adguardUsername: adguardUserInput,
-                });
-                await onMutateAdGuard({
-                  action: "handshake",
-                  url: adguardUrlInput,
-                });
-                setHandshakeOk(true);
-                setTestingHandshake(false);
-              }}
+              onClick={handleAdGuardHandshake}
+              disabled={testingHandshake || !adguardUrlInput.trim()}
               className="w-full py-2.5 px-4 rounded-xl text-xs font-mono font-bold transition-all hover:brightness-110"
               style={{
                 backgroundColor: currentTheme.colors.accent,
@@ -781,16 +806,16 @@ export function SetupWizardModal({
             >
               {testingHandshake
                 ? "Prüfe AdGuard API-Handshake..."
-                : "⚡ Live-Handshake prüfen & 1:1 Sync aktivieren"}
+                : "AdGuard-Verbindung prüfen"}
             </button>
 
-            {handshakeOk && (
-              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-mono text-emerald-300 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>
-                  Verbindung aktiv: AdGuard Home {policy.adguardVersion} auf{" "}
-                  <strong>{adguardUrlInput}</strong> ist gekoppelt!
-                </span>
+            {handshake && (
+              <div role="status" className={`p-3.5 rounded-xl border text-xs font-mono ${handshake.connected
+                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                : "bg-red-500/10 border-red-500/30 text-red-300"}`}>
+                {handshake.connected
+                  ? `AdGuard Home ${handshake.version} ist verbunden (${handshake.latencyMs} ms).`
+                  : handshake.error}
               </div>
             )}
           </div>

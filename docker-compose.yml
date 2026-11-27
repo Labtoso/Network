@@ -17,6 +17,9 @@ services:
       - ALLOWED_EMAIL=${ALLOWED_EMAIL:-sebirauch2022@gmail.com}
       - NEXT_PUBLIC_ALLOWED_EMAIL=${ALLOWED_EMAIL:-sebirauch2022@gmail.com}
       - CF_ZERO_TRUST_STRICT=${CF_ZERO_TRUST_STRICT:-false}
+      - ADGUARD_URL=${ADGUARD_URL:-http://192.168.178.67:3001}
+      - ADGUARD_USER=${ADGUARD_USER:-admin}
+      - ADGUARD_PASSWORD=${ADGUARD_PASSWORD:-}
     volumes:
       - network-data:/app/data
       - network-certs:/app/certs

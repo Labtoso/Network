@@ -37,10 +37,13 @@ if ! command -v pveversion >/dev/null 2>&1 || ! command -v pct >/dev/null 2>&1; 
   say "System packages installed"
 
   if [ -d "$INSTALL_DIR/.git" ]; then
-    git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" fetch -q --depth 1 origin "$BRANCH"
-    git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" reset -q --hard FETCH_HEAD
+    cd "$INSTALL_DIR"
+    if systemctl is-active --quiet network-admin.service; then
+      exec bash ./manage.sh update
+    fi
+    git -c core.fileMode=false -c safe.directory="$INSTALL_DIR" fetch -q origin "$BRANCH"
+    git -c core.fileMode=false -c safe.directory="$INSTALL_DIR" reset -q --keep FETCH_HEAD
   else
-    rm -rf "$INSTALL_DIR"
     git clone -q --depth 1 --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
   fi
   chmod +x "$INSTALL_DIR/manage.sh" "$INSTALL_DIR/admin.sh" "$INSTALL_DIR/deploy/"*.sh 2>/dev/null || true
@@ -68,25 +71,37 @@ install_notes() {
 # Writes the Labtoso Network Control Suite address into the Notes of network-admin containers
 # (Proxmox UI: container -> Summary -> Notes). Refreshed every 2 minutes by network-notes.timer.
 set -uo pipefail
-state=/run/network-notes; mkdir -p "$state"
+node="$(hostname -s)"
+marker_start='<!-- network-admin:begin -->'
+marker_end='<!-- network-admin:end -->'
 ids="$*"; [ -n "$ids" ] || ids=$(pct list 2>/dev/null | awk 'NR>1 && $2=="running" {print $1}')
 for id in $ids; do
   pct config "$id" 2>/dev/null | grep -qE '^tags:.*\bnetwork-admin\b' || continue
   [ "$(pct status "$id" 2>/dev/null | awk '{print $2}')" = running ] || continue
   ip=$(pct exec "$id" -- hostname -I 2>/dev/null | awk '{print $1}')
   ts_ip=$(pct exec "$id" -- tailscale ip -4 2>/dev/null | head -n1)
+  port=$(pct exec "$id" -- sed -nE 's/^PORT=[[:space:]"]*([0-9]+)[[:space:]"]*$/\1/p' /opt/network/.env 2>/dev/null | tail -n 1)
+  port="${port:-3000}"
   url=$(pct exec "$id" -- sh -c '
+    systemctl is-active --quiet network-admin-cloudflared || exit 0
     tok=$(grep -m1 "^CLOUDFLARE_TUNNEL_TOKEN=" /opt/network/.env 2>/dev/null | cut -d= -f2-)
     dom=$(grep -m1 "^PUBLIC_DOMAIN=" /opt/network/.env 2>/dev/null | cut -d= -f2-)
-    if [ -n "$tok" ] && [ -n "$dom" ]; then
+    if [ -n "$tok" ] && [ -n "$dom" ] && getent ahosts "$dom" >/dev/null 2>&1; then
       echo "https://$dom"
     else
       q=$(journalctl -u network-admin-cloudflared -b --no-pager -o cat 2>/dev/null | grep -o "https://[-a-z0-9]*\.trycloudflare\.com" | tail -1)
-      [ -n "$q" ] && echo "$q" || echo "http://$(hostname -I 2>/dev/null | awk "{print \$1}"):3000"
+      [ -z "$q" ] || echo "$q"
     fi
   ' 2>/dev/null)
+  lan=""
+  if [ -n "$ip" ]; then
+    if [[ "$ip" == *:* ]]; then ip="[$ip]"; fi
+    lan="http://$ip:$port"
+  fi
+  url="${url:-$lan}"
   echo "$id ${url:-}"
-  desc="## 🛡️ Network Control Suite
+  block="$marker_start
+## Network Control Suite
 
 **Panel-Adresse** (zum Öffnen oder Kopieren, Zero-Trust & AdGuard 1:1 Dashboard):
 
@@ -94,18 +109,27 @@ for id in $ids; do
 ${url:-wird noch ermittelt, Panel startet gerade ...}
 \`\`\`
 
-- Dashboard: [admin.labtoso.de](https://admin.labtoso.de)
-- Direkt im Heimnetz: [http://${ip:-?}:3000](http://${ip:-127.0.0.1}:3000)
+- Direkt im Heimnetz: ${lan:-Adresse wird ermittelt}
 - Tailscale-IP: \`${ts_ip:-nicht verbunden}\`
-- 5G / Hotspot Roaming-DoH: \`${url:-https://admin.labtoso.de}/api/dns-query/{client_id}\`
 - Container-IP: ${ip:-?}
 
 Logs: \`journalctl -u network-admin -f\` (Konsole des Containers) · Update: Proxmox-Script nochmal ausführen (oder automatisch alle 3 Minuten)
 
-_Die Adresse aktualisiert sich hier alle 2 Minuten von selbst (network-notes.timer auf dem Host)._"
-  sum=$(printf '%s' "$desc" | md5sum | cut -d' ' -f1)
-  [ "$(cat "$state/$id" 2>/dev/null)" = "$sum" ] && continue
-  pct set "$id" --description "$desc" && echo "$sum" > "$state/$id"
+_Die Adresse aktualisiert sich hier alle 2 Minuten von selbst (network-notes.timer auf dem Host)._
+$marker_end"
+  if ! current=$(pvesh get "/nodes/$node/lxc/$id/config" --output-format json |
+    perl -MJSON::PP -0777 -ne 'my $config = decode_json($_); print $config->{description} // "";'); then
+    echo "Container $id: Notes could not be read." >&2
+    continue
+  fi
+  if [[ "$current" == *"$marker_start"*"$marker_end"* ]]; then
+    desc="${current%%"$marker_start"*}$block${current#*"$marker_end"}"
+  elif [[ -z "$current" || "$current" == "Labtoso Network Control Suite, installing ..." || "$current" == "## 🛡️ Network Control Suite"*"_Die Adresse aktualisiert sich hier alle 2 Minuten von selbst (network-notes.timer auf dem Host)._" ]]; then
+    desc="$block"
+  else
+    desc="$current"$'\n\n'"$block"
+  fi
+  [ "$current" = "$desc" ] || pct set "$id" --description "$desc"
 done
 NOTES
   chmod 755 /usr/local/bin/network-notes
@@ -141,7 +165,6 @@ show_backend() {
     [ -n "$url" ] && break
     sleep 2
   done
-  rm -f "/run/network-notes/$id"; /usr/local/bin/network-notes "$id" >/dev/null
   echo
   if [ -n "$url" ]; then
     printf "  ${c_b}Panel-Adresse (steht auch in Proxmox unter Container %s -> Summary -> Notes):${c_off}\n\n" "$id"
@@ -176,7 +199,7 @@ if [ "${#existing[@]}" -gt 0 ]; then
     want=$(cores_for); cur=$(pct config "$CT" | awk '/^cores:/ {print $2}')
     if [ "${cur:-0}" != "$want" ]; then pct set "$CT" --cores "$want"; say "Container $CT now uses $want CPU cores"; fi
     info "Updating Labtoso Network in container $CT (keeps tokens, SQLite DB & settings)"
-    pct exec "$CT" -- bash -c "cd $INSTALL_DIR && ./manage.sh update"
+    pct exec "$CT" -- bash -c "cd $INSTALL_DIR && bash ./manage.sh update"
     say "Container $CT is up to date."
     install_notes
     show_backend "$CT"
@@ -229,7 +252,7 @@ if [ "$MODE" = advanced ]; then
   PW=$(secret "Root password" "Root password for the console (empty = no password, use 'pct enter $CTID'):")
   PUBLIC_DOMAIN=$(input "Zero-Trust Domain" "Cloudflare Zero-Trust domain for the panel:" "$PUBLIC_DOMAIN")
   ADGUARD_URL=$(input "AdGuard Home URL" "Local AdGuard Home address for 1:1 bidirectional sync:" "$ADGUARD_URL")
-  yesno "Updates" "Update the panel automatically? (checks GitHub every 15 minutes)" || AUTOUPDATE=0
+  yesno "Updates" "Update the panel automatically? (checks GitHub every 3 minutes)" || AUTOUPDATE=0
 fi
 
 # ---------- Optional Secrets (Tailscale & Cloudflare Tunnel) ----------
@@ -339,14 +362,7 @@ pct exec "$CTID" -- bash -c '
   chmod 600 .env
   chmod +x manage.sh admin.sh deploy/*.sh 2>/dev/null || true
 
-  ./manage.sh install >/dev/null
-
-  if [ "$AUTOUPDATE" = 1 ]; then
-    cp deploy/network-update.service /etc/systemd/system/network-update.service
-    cp deploy/network-update.timer /etc/systemd/system/network-update.timer
-    systemctl daemon-reload
-    systemctl enable -q --now network-update.timer
-  fi
+  NETWORK_AUTO_UPDATE="$AUTOUPDATE" ./manage.sh install
 '
 
 install_notes
@@ -365,7 +381,7 @@ echo
 echo "  Info:    pct exec $CTID -- /opt/network/manage.sh info"
 echo "  Logs:    pct exec $CTID -- /opt/network/manage.sh logs"
 echo "  Shell:   pct enter $CTID"
-echo "  Update:  run this script again (or it updates itself every 15 minutes)"
+echo "  Update:  run this script again (or let the 3-minute timer update it if enabled)"
 echo "  Remove:  pct stop $CTID && pct destroy $CTID"
 echo "           (notes helper on the host: systemctl disable --now network-notes.timer)"
 echo

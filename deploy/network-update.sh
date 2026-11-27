@@ -8,6 +8,9 @@ cd "$DIR"
 DIR="$(pwd -P)"
 git_() { git -c core.fileMode=false -c safe.directory="$DIR" "$@"; }
 
+command -v flock >/dev/null || { echo "[AUTO-UPDATE] flock is required (util-linux)." >&2; exit 1; }
+source "$DIR/deploy/network-service.sh"
+
 exec 9>"$DIR/.network-update.lock"
 flock -n 9 || exit 0
 
@@ -23,7 +26,12 @@ fi
 stage="$(mktemp -d "$DIR/.network-update.XXXXXX")"
 old_bundle="$stage/previous-build"
 candidate="$stage/source"
+keep_stage=false
 cleanup() {
+  if "$keep_stage"; then
+    echo "[AUTO-UPDATE] Recovery files retained in $stage" >&2
+    return
+  fi
   git_ worktree remove --force "$candidate" 2>/dev/null || true
   rm -rf -- "$stage"
 }
@@ -55,15 +63,19 @@ fi
 # Existing standalone installations may have written state inside the build.
 if "$running"; then systemctl stop "$service"; fi
 rollback() {
+  local code="$?"
   trap - ERR
-  git_ reset --keep "$old" || true
+  if "$running"; then systemctl stop "$service" || keep_stage=true; fi
+  git_ reset --keep "$old" || keep_stage=true
   if [ -d "$old_bundle" ]; then
-    if [ -d .next ]; then mv .next "$stage/failed-build"; fi
-    mv "$old_bundle" .next
+    if [ -d .next ]; then mv .next "$stage/failed-build" || keep_stage=true; fi
+    if [ ! -d .next ]; then mv "$old_bundle" .next || keep_stage=true; fi
   elif [ -d .next/standalone ] && [ ! -d "$candidate/.next" ]; then
-    mv .next "$stage/failed-build"
+    mv .next "$stage/failed-build" || keep_stage=true
   fi
-  if "$running"; then systemctl start "$service" || true; fi
+  if "$running"; then systemctl start "$service" || keep_stage=true; fi
+  echo "[AUTO-UPDATE] Activation failed for ${new:0:7}. Rollback attempted to ${old:0:7}." >&2
+  exit "$code"
 }
 trap rollback ERR
 
@@ -73,7 +85,12 @@ git_ reset --keep "$new"
 chmod +x deploy/network-update.sh
 if [ -d .next ]; then mv .next "$old_bundle"; fi
 mv "$candidate/.next" .next
-if "$running"; then systemctl start "$service"; fi
+if "$running"; then
+  systemctl start "$service"
+  if ! wait_for_network_service "$service" "$(network_service_port)"; then
+    false
+  fi
+fi
 
 trap - ERR
 echo "[AUTO-UPDATE] Installed ${new:0:7}"

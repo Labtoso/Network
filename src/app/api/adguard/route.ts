@@ -6,10 +6,11 @@ import {
   performBidirectionalAdGuardSync,
 } from "@/lib/adguard-sync";
 import { checkAdGuardStatus } from "@/lib/adguard";
+import { getAdGuardConnection } from "@/lib/adguard-connection";
 
 export async function GET() {
-  const syncInfo = await performBidirectionalAdGuardSync();
   const status = await checkAdGuardStatus();
+  const syncInfo = status.connected ? await performBidirectionalAdGuardSync() : null;
   const state = getNetworkState();
 
   return NextResponse.json({
@@ -28,11 +29,24 @@ export async function POST(request: NextRequest) {
 
     // 1. Handshake test (for Onboarding Wizard & Settings)
     if (action === "handshake") {
-      const status = await checkAdGuardStatus(body.url);
+      const url = typeof body.url === "string" ? body.url.trim() : undefined;
+      const username = typeof body.username === "string" ? body.username.trim() : undefined;
+      const status = await checkAdGuardStatus(url, username);
+      if (!status.connected) {
+        return NextResponse.json({ ok: false, status, error: status.error }, { status: 424 });
+      }
+      const { user } = getAdGuardConnection(status.url, username);
+      const { policy } = saveNetworkState((draft) => {
+        draft.policy.adguardUrl = status.url;
+        draft.policy.adguardUsername = user;
+        draft.policy.adguardConnected = true;
+        draft.policy.adguardVersion = status.version;
+      });
       return NextResponse.json({
         ok: true,
         status,
-        toast: `✓ AdGuard Home Handshake erfolgreich (${status.url} · ${status.version} · ${status.latencyMs}ms)`,
+        policy,
+        toast: `AdGuard Home ${status.version} verbunden (${status.latencyMs} ms).`,
       });
     }
 
@@ -41,10 +55,12 @@ export async function POST(request: NextRequest) {
       const syncInfo = await performBidirectionalAdGuardSync();
       const state = getNetworkState();
       return NextResponse.json({
-        ok: true,
+        ok: syncInfo.syncedLive,
         syncInfo,
         adguard: state.adguard,
-        toast: "✓ Bidirektionaler 1:1 AdGuard-Sync abgeschlossen (0ms SQLite/Cache aktualisiert).",
+        toast: syncInfo.syncedLive
+          ? "AdGuard-Daten wurden aktualisiert."
+          : "AdGuard Home konnte keine Live-Daten liefern.",
       });
     }
 

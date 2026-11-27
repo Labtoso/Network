@@ -1,4 +1,16 @@
 export type QueryLogStatus = "allowed" | "blocked" | "rewritten" | "service_blocked";
+
+export type AdGuardStatusResponse =
+  | {
+      connected: true;
+      url: string;
+      version: string;
+      dnsAddresses: string[];
+      protectionEnabled: boolean;
+      running: boolean;
+      latencyMs: number;
+    }
+  | { connected: false; url: string; error: string };
 export type QueryTransport = "UDP :53" | "DoH (5G Roaming)" | "DoT (853)" | "TCP :53";
 
 export interface AdGuardQueryLogEntry {

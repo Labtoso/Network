@@ -136,6 +136,8 @@ cmd_install() {
   ensure_root_ca
 
   cd "$APP_DIR"
+  source "$APP_DIR/deploy/network-service.sh"
+  PORT="$(network_service_port)"
   git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
 
   if [ ! -f ".env" ] && [ -f ".env.example" ]; then
@@ -151,14 +153,14 @@ cmd_install() {
 
   say "Installing project npm dependencies..."
   if [ -f "package-lock.json" ]; then
-    npm ci --no-audit --no-fund --loglevel=error
+    npm ci --include=dev --no-audit --no-fund --loglevel=error
   else
-    npm install --no-audit --no-fund --loglevel=error
+    npm install --include=dev --no-audit --no-fund --loglevel=error
   fi
 
   say "Initializing & migrating SQLite database via Prisma..."
-  DATABASE_URL="file:./dev.db" npx prisma generate >/dev/null 2>&1 || true
-  DATABASE_URL="file:./dev.db" npx prisma db push --skip-generate >/dev/null 2>&1 || true
+  DATABASE_URL="file:./dev.db" npm run db:generate
+  DATABASE_URL="file:./dev.db" npm run db:push
 
   say "Building production Next.js bundle (npm run build)..."
   npm run build
@@ -202,6 +204,7 @@ UNIT
     systemctl daemon-reload
     systemctl enable -q "$APP_NAME"
     systemctl restart "$APP_NAME"
+    wait_for_network_service "$APP_NAME.service" "$PORT"
     info "Systemd service ${APP_NAME}.service started and enabled on boot."
 
     # Cloudflare Tunnel service: uses CLOUDFLARE_TUNNEL_TOKEN if set, otherwise starts a free Quick Tunnel (trycloudflare.com) just like the Bots repo!
@@ -236,7 +239,7 @@ CFUNIT
     fi
 
     # Enable automatic 3-minute GitHub update timer (preserves all config & setup state)
-    if [ -f "${APP_DIR}/deploy/network-update.service" ] && [ -f "${APP_DIR}/deploy/network-update.timer" ]; then
+    if [ "${NETWORK_AUTO_UPDATE:-1}" = 1 ] && [ -f "${APP_DIR}/deploy/network-update.service" ] && [ -f "${APP_DIR}/deploy/network-update.timer" ]; then
       sed "s|/opt/network|${APP_DIR}|g" "${APP_DIR}/deploy/network-update.service" > /etc/systemd/system/network-update.service
       cp "${APP_DIR}/deploy/network-update.timer" /etc/systemd/system/network-update.timer
       chmod +x "${APP_DIR}/deploy/network-update.sh" 2>/dev/null || true
