@@ -1,0 +1,63 @@
+name: Deploy Panel to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Typecheck (Frontend + Backend)
+        run: |
+          npx prisma generate
+          npm run typecheck
+
+      - name: Build static export
+        env:
+          # Feste Backend-Adresse: die Pages-Seite verbindet sich automatisch.
+          # Ueberschreibbar per Repository-Variable NETWORK_API_BASE (Settings > Secrets and variables > Actions > Variables).
+          NEXT_PUBLIC_API_BASE: ${{ vars.NETWORK_API_BASE || 'https://labtoso.duckdns.org' }}
+          # Eigene Domain admin.labtoso.de liegt im Root, daher kein basePath.
+          # Ohne eigene Domain (labtoso.github.io/Network) die Variable NETWORK_BASE_PATH=/Network setzen.
+          NEXT_PUBLIC_BASE_PATH: ${{ vars.NETWORK_BASE_PATH || '' }}
+          NEXT_TELEMETRY_DISABLED: 1
+        run: |
+          npm run build:web
+          touch out/.nojekyll
+          echo "${{ vars.NETWORK_PAGES_DOMAIN || 'admin.labtoso.de' }}" > out/CNAME
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

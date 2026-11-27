@@ -3,67 +3,72 @@
 @tailwind utilities;
 
 :root {
-  --bg-base: #050505;
-  --bg-panel: rgba(10, 10, 12, 0.78);
-  --bg-panel-hover: rgba(18, 19, 24, 0.88);
-  --border-color: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(56, 189, 248, 0.35);
-  --accent: #38BDF8;
-  --accent-secondary: #94A3B8;
-  --accent-muted: rgba(56, 189, 248, 0.12);
-  --text-primary: #F8FAFC;
-  --text-secondary: #94A3B8;
-  --text-muted: #52525B;
+  --bg: 5 5 5;
+  --panel: 10 15 10;
+  --line: 18 48 27;
+  --fg: 209 250 229;
+  --dim: 91 138 104;
+  --accent: 0 255 65;
+  --accent2: 0 179 45;
   color-scheme: dark;
 }
 
-* {
-  box-sizing: border-box;
+html {
+  background: rgb(var(--bg));
 }
 
-html,
 body {
-  margin: 0;
-  padding: 0;
-  background-color: var(--bg-base);
-  color: var(--text-primary);
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  background: transparent;
+  color: rgb(var(--fg));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
+  text-rendering: optimizeLegibility;
 }
 
-/* Subtle CRT scanline effect when Cyber-Terminal / Amber theme is active */
-.scanlines::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 40;
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent 0px,
-    transparent 2px,
-    rgba(0, 0, 0, 0.24) 3px,
-    rgba(0, 0, 0, 0.24) 4px
-  );
+body {
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
 }
 
-/* Custom Sleek Dark Scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+::selection {
+  background: rgb(var(--accent) / 0.3);
 }
 
-::-webkit-scrollbar-track {
-  background: #050505;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--line)) transparent;
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
-  border-radius: 9999px;
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--accent);
+.code-editor textarea,
+.code-editor pre {
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 2;
+  white-space: pre;
+  word-wrap: normal;
 }
+
+.tok-comment { color: rgb(var(--dim)); font-style: italic; }
+.tok-allow { color: rgb(34 197 94); }
+.tok-anchor { color: rgb(var(--accent)); }
+.tok-mod { color: rgb(192 132 252); }
+.tok-regex { color: rgb(251 146 60); }
+.tok-host { color: rgb(56 189 248); }
+.tok-error { text-decoration: underline wavy rgb(239 68 68); }
+.tok-tag { color: rgb(var(--accent)); }
+.tok-attr { color: rgb(192 132 252); }
+.tok-str { color: rgb(251 191 36); }
+
+@keyframes row-flash {
+  from { background-color: rgb(var(--accent) / 0.14); }
+  to { background-color: transparent; }
+}
+.row-flash { animation: row-flash 1.2s ease-out; }

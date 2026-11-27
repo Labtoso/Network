@@ -1,5 +1,10 @@
+// Datenbankmodell des Network Admin-Panels (SQLite).
+// AdGuard Home bleibt die Quelle der Wahrheit fuer Filter, Regeln, Clients und
+// Rewrites. Hier liegt nur, was AdGuard selbst nicht kennt.
+
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -7,60 +12,70 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model DeviceProfile {
-  id                  String   @id
-  name                String
-  ip                  String
-  mac                 String
-  ouiVendor           String
-  deviceType          String   // "apple" | "android" | "pc" | "console" | "tv" | "iot"
-  role                String   // "admin" | "child" | "guest" | "server"
-  isAdminProtected    Boolean  @default(false)
-  roamingEnforced     Boolean  @default(true)
-  offlineCacheLock    Boolean  @default(true)
-  paused              Boolean  @default(false)
-  bedtimeLocked       Boolean  @default(false)
-  dailyLimitMinutes   Int      @default(180)
-  usedMinutesToday    Int      @default(45)
-  bonusMinutesToday   Int      @default(0)
-  blockedServicesJson String   @default("[]") // e.g. ["tiktok","roblox"]
-  weeklyScheduleJson  String   @default("{}") // 7x24 grid boolean matrix
-  bandwidthMbps       Float    @default(0.4)
-  queriesToday        Int      @default(1240)
-  blockedToday        Int      @default(142)
-  lastSeen            DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-}
-
-model BlockPageConfig {
-  id                  String   @id @default("default")
-  mode                String   @default("studio") // "redirect" | "studio" | "code"
-  redirectUrl         String   @default("https://de.wikipedia.org")
-  title               String   @default("ZUGRIFF VERWEIGERT // ZERO-TRUST POLICY")
-  subtitle            String   @default("Diese Verbindung wurde durch die Labtoso Network Control Suite gesperrt.")
-  alarmMessage        String   @default("Zugriff verweigert: {domain} ist für {client_name} während der aktuellen Richtlinie ({curfew_reason}) gesperrt!")
-  curfewReason        String   @default("Lernzeit & Jugendschutz-Kontingent")
-  showCountdown       Boolean  @default(true)
-  countdownMinutes    Int      @default(45)
-  allowUnblockRequest Boolean  @default(true)
-  customHtml          String   @default("")
-  updatedAt           DateTime @updatedAt
-}
-
-model UnblockRequest {
-  id                String   @id
-  clientId          String
-  clientName        String
-  domain            String
-  requestedMinutes  Int      @default(30)
-  reason            String
-  status            String   @default("pending") // "pending" | "approved" | "denied"
-  grantedUntil      String?
-  createdAt         DateTime @default(now())
-}
-
-model SystemSetting {
+/// Schluessel/Wert-Einstellungen (JSON-codiert). Geheimnisse werden AES-256-GCM verschluesselt abgelegt.
+model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+/// Roaming-Geraet mit eigener AdGuard ClientID fuer DoH/DoT ausserhalb des Heimnetzes.
+model RoamingDevice {
+  id            String    @id @default(cuid())
+  name          String
+  clientId      String    @unique
+  platform      String
+  adguardClient String?
+  enabled       Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  lastSeenAt    DateTime?
+  lastProtocol  String?
+  queryCount    Int       @default(0)
+  offlineAnswers Int      @default(0)
+}
+
+/// Freigabe-Anfrage von der Sperrseite ("Zugang anfordern").
+model AccessRequest {
+  id         String    @id @default(cuid())
+  domain     String
+  clientIp   String
+  clientName String?
+  message    String?
+  status     String    @default("pending")
+  createdAt  DateTime  @default(now())
+  decidedAt  DateTime?
+  expiresAt  DateTime?
+  ruleText   String?
+
+  @@index([status, createdAt])
+}
+
+/// Zuletzt bekannte Sperren fuer die Offline-Durchsetzung, wenn AdGuard nicht erreichbar ist.
+model BlockCache {
+  domain    String   @id
+  source    String
+  updatedAt DateTime @updatedAt
+}
+
+/// Gemessene Latenz der Upstream-DNS-Server und von AdGuard selbst.
+model LatencySample {
+  id        Int      @id @default(autoincrement())
+  target    String
+  ms        Int
+  ok        Boolean
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([target, createdAt])
+}
+
+/// Protokoll aller schreibenden Admin-Aktionen.
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  actor     String
+  action    String
+  detail    String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }

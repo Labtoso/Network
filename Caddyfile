@@ -1,0 +1,56 @@
+# Labtoso Network: Caddy-Konfiguration
+# Wird von ./manage.sh nach /etc/caddy/Caddyfile kopiert. Die Werte kommen aus
+# /etc/caddy/network.env (erzeugt aus /opt/network/.env).
+# Benoetigt Caddy mit dem Modul github.com/caddy-dns/duckdns (installiert manage.sh automatisch).
+
+{
+	email {$ACME_EMAIL}
+	admin localhost:2019
+}
+
+(network_app) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	@backend path /api/* /dns-query /dns-query/* /blocked
+	handle @backend {
+		reverse_proxy 127.0.0.1:{$BACKEND_PORT}
+	}
+
+	handle {
+		root * {$STATIC_DIR}
+		try_files {path} {path}/index.html /index.html
+		file_server
+	}
+}
+
+# Hauptdomain plus Wildcard (Wildcard wird fuer Android-DoT gebraucht: <clientid>.<subdomain>.duckdns.org).
+# Zertifikat per DNS-01 ueber DuckDNS: kein offener Port 80 noetig.
+{$DUCKDNS_DOMAIN}.duckdns.org, *.{$DUCKDNS_DOMAIN}.duckdns.org {
+	tls {
+		dns duckdns {$DUCKDNS_TOKEN}
+		resolvers 1.1.1.1 9.9.9.9
+	}
+	import network_app
+}
+
+# Optionale Zusatz-Sites: eigene Domain (CUSTOM_DOMAIN) und Tailscale-HTTPS (*.ts.net).
+import /etc/caddy/sites.d/*.caddy
+
+# Sperrseite: AdGuard antwortet fuer gesperrte Domains mit der IP dieses LXC
+# (Blockmodus "Benutzerdefinierte IP"). Jeder HTTP-Aufruf mit fremdem Host landet hier.
+http:// {
+	@public path /api/public/*
+	handle @public {
+		reverse_proxy 127.0.0.1:{$BACKEND_PORT}
+	}
+	handle {
+		rewrite * /blocked
+		reverse_proxy 127.0.0.1:{$BACKEND_PORT}
+	}
+}
