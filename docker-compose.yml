@@ -1,0 +1,36 @@
+services:
+  network-admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: network-admin
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:-admin.labtoso.de}
+      - NEXT_PUBLIC_DOMAIN=${PUBLIC_DOMAIN:-admin.labtoso.de}
+      - ALLOWED_EMAIL=${ALLOWED_EMAIL:-sebirauch2022@gmail.com}
+      - NEXT_PUBLIC_ALLOWED_EMAIL=${ALLOWED_EMAIL:-sebirauch2022@gmail.com}
+      - CF_ZERO_TRUST_STRICT=${CF_ZERO_TRUST_STRICT:-false}
+    networks:
+      - labtoso-net
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: network-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - network-admin
+    networks:
+      - labtoso-net
+
+networks:
+  labtoso-net:
+    driver: bridge
