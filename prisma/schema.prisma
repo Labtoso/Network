@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model DeviceProfile {
+  id                  String   @id
+  name                String
+  ip                  String
+  mac                 String
+  ouiVendor           String
+  deviceType          String   // "apple" | "android" | "pc" | "console" | "tv" | "iot"
+  role                String   // "admin" | "child" | "guest" | "server"
+  isAdminProtected    Boolean  @default(false)
+  roamingEnforced     Boolean  @default(true)
+  offlineCacheLock    Boolean  @default(true)
+  paused              Boolean  @default(false)
+  bedtimeLocked       Boolean  @default(false)
+  dailyLimitMinutes   Int      @default(180)
+  usedMinutesToday    Int      @default(45)
+  bonusMinutesToday   Int      @default(0)
+  blockedServicesJson String   @default("[]") // e.g. ["tiktok","roblox"]
+  weeklyScheduleJson  String   @default("{}") // 7x24 grid boolean matrix
+  bandwidthMbps       Float    @default(0.4)
+  queriesToday        Int      @default(1240)
+  blockedToday        Int      @default(142)
+  lastSeen            DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model BlockPageConfig {
+  id                  String   @id @default("default")
+  mode                String   @default("studio") // "redirect" | "studio" | "code"
+  redirectUrl         String   @default("https://de.wikipedia.org")
+  title               String   @default("ZUGRIFF VERWEIGERT // ZERO-TRUST POLICY")
+  subtitle            String   @default("Diese Verbindung wurde durch die Labtoso Network Control Suite gesperrt.")
+  alarmMessage        String   @default("Zugriff verweigert: {domain} ist für {client_name} während der aktuellen Richtlinie ({curfew_reason}) gesperrt!")
+  curfewReason        String   @default("Lernzeit & Jugendschutz-Kontingent")
+  showCountdown       Boolean  @default(true)
+  countdownMinutes    Int      @default(45)
+  allowUnblockRequest Boolean  @default(true)
+  customHtml          String   @default("")
+  updatedAt           DateTime @updatedAt
+}
+
+model UnblockRequest {
+  id                String   @id
+  clientId          String
+  clientName        String
+  domain            String
+  requestedMinutes  Int      @default(30)
+  reason            String
+  status            String   @default("pending") // "pending" | "approved" | "denied"
+  grantedUntil      String?
+  createdAt         DateTime @default(now())
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
