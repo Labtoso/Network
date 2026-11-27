@@ -320,7 +320,7 @@ export const INITIAL_STATE: NetworkControlState = {
     routerGateway: "192.168.178.1 (FRITZ!Box 6660 Cable)",
     adminEmail: ALLOWED_OWNER_EMAIL,
     adminDeviceWhitelisted: true,
-    onboardingCompleted: true,
+    onboardingCompleted: false,
     dohEndpointBase: `https://${PUBLIC_ZERO_TRUST_DOMAIN}/api/dns-query`,
     dotHostnameBase: `dot.labtoso.de`,
   },

@@ -554,14 +554,38 @@ export function SetupWizardModal({
 }: SetupWizardModalProps) {
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [adguardUrlInput, setAdguardUrlInput] = useState(policy.adguardUrl);
+  const [adguardUserInput, setAdguardUserInput] = useState(
+    policy.adguardUsername || "admin"
+  );
   const [handshakeOk, setHandshakeOk] = useState(true);
+  const [testingHandshake, setTestingHandshake] = useState(false);
 
   if (!open) return null;
   const currentTheme =
     THEME_LIST.find((t) => t.id === themeId) || THEME_LIST[0];
 
+  const handleFinishOrDismiss = async () => {
+    try {
+      localStorage.setItem("labtoso-setup-completed", "true");
+    } catch {
+      // ignore
+    }
+    await onMutateControl({
+      action: "update_policy",
+      onboardingCompleted: true,
+    });
+    onClose();
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-lg flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-lg flex items-center justify-center p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && policy.onboardingCompleted) {
+          onClose();
+        }
+      }}
+    >
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -572,36 +596,87 @@ export function SetupWizardModal({
         }}
       >
         {/* Wizard Progress Header */}
-        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3.5">
           <div>
-            <span
-              className="text-[10px] font-mono px-2 py-0.5 rounded uppercase"
-              style={{
-                backgroundColor: currentTheme.colors.accentMuted,
-                color: currentTheme.colors.accent,
-              }}
-            >
-              SCHRITT {step} VON 5 // ZERO-TRUST ONBOARDING
-            </span>
-            <h2 className="text-base sm:text-lg font-bold text-white mt-1">
-              Interaktiver Setup- & Einrichtungsassistent
+            <div className="flex items-center gap-2">
+              <span
+                className="text-[10px] font-mono px-2 py-0.5 rounded uppercase font-bold"
+                style={{
+                  backgroundColor: currentTheme.colors.accentMuted,
+                  color: currentTheme.colors.accent,
+                }}
+              >
+                SCHRITT {step} VON 5 // SCHRITT-FÜR-SCHRITT EINRICHTUNG
+              </span>
+              {policy.onboardingCompleted && (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
+                  ✓ BEREITS EINGERICHTET
+                </span>
+              )}
+            </div>
+            <h2 className="text-base sm:text-lg font-bold text-white mt-1.5">
+              Interaktiver Setup- &amp; Verbindungsassistent
             </h2>
           </div>
+
           <button
             type="button"
-            onClick={onClose}
-            className="px-2.5 py-1 rounded-lg text-xs font-mono bg-white/5 text-zinc-400 hover:text-white"
+            onClick={handleFinishOrDismiss}
+            className="px-3 py-1.5 rounded-lg text-xs font-mono bg-white/5 text-zinc-300 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+            title="Assistent schließen (wird nicht erneut automatisch eingeblendet)"
           >
-            Schließen ✕
+            {policy.onboardingCompleted ? "Schließen ✕" : "Überspringen & Schließen ✕"}
           </button>
+        </div>
+
+        {/* Clickable 5-Step Progress Pills */}
+        <div className="grid grid-cols-5 gap-1.5 font-mono text-[10px]">
+          {[
+            { n: 1, label: "1. Theme" },
+            { n: 2, label: "2. AdGuard" },
+            { n: 3, label: "3. Router/DNS" },
+            { n: 4, label: "4. Zero-Trust" },
+            { n: 5, label: "5. 5G-Handys" },
+          ].map((s) => {
+            const active = step === s.n;
+            const done = step > s.n || policy.onboardingCompleted;
+            return (
+              <button
+                key={s.n}
+                type="button"
+                onClick={() => setStep(s.n as typeof step)}
+                className="py-1.5 px-2 rounded-lg text-center truncate transition-all"
+                style={{
+                  backgroundColor: active
+                    ? currentTheme.colors.accent
+                    : done
+                    ? currentTheme.colors.accentMuted
+                    : "rgba(255,255,255,0.04)",
+                  color: active
+                    ? "#050505"
+                    : done
+                    ? currentTheme.colors.accent
+                    : "#94A3B8",
+                  fontWeight: active ? 700 : 500,
+                }}
+              >
+                {s.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Step 1: 5 Dark-Themes & Live Canvas */}
         {step === 1 && (
           <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-white">
-              1. Theme-Auswahl & Threadlines Live-Canvas-Hintergrund
-            </h3>
+            <div>
+              <h3 className="text-sm font-semibold text-white">
+                Schritt 1: Wähle dein Dark-Theme &amp; Live-Canvas-Design
+              </h3>
+              <p className="text-xs font-mono text-zinc-400 mt-1">
+                Was hier passiert: Dein gewähltes Theme und der 60-FPS-Canvas-Hintergrund werden dauerhaft gespeichert und auch für die Sperrseite (<code className="text-white">/block</code>) übernommen.
+              </p>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {THEME_LIST.map((t) => {
                 const active = t.id === themeId;
@@ -653,48 +728,68 @@ export function SetupWizardModal({
         {/* Step 2: Local AdGuard Home Pairing */}
         {step === 2 && (
           <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-white">
-              2. Lokale AdGuard Home Kopplung (ZimaOS / Proxmox)
-            </h3>
-            <p className="text-xs text-zinc-400 font-mono">
-              Verbindet das Panel bidirektional mit AdGuard Home (<code className="text-white">/control/status</code>).
-            </p>
-            <div className="flex gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-white">
+                Schritt 2: AdGuard Home Schritt für Schritt verbinden
+              </h3>
+              <div className="mt-2 p-3.5 rounded-xl bg-black/50 border border-white/10 text-xs font-mono space-y-1.5 text-zinc-300">
+                <div className="text-white font-bold">So verbindest du AdGuard Home (1:1 Live-Mirror):</div>
+                <div>1. Prüfe in ZimaOS / Proxmox, unter welcher IP &amp; welchem Port AdGuard Home läuft (Standard bei dir: <code className="text-white">http://192.168.178.67:3001</code>).</div>
+                <div>2. Trage die URL und deinen AdGuard-Login (<code className="text-white">admin</code>) unten ein.</div>
+                <div>3. Klicke auf <strong>„Live-Handshake prüfen“</strong> – das Panel verbindet sich sofort mit <code className="text-white">/control/status</code> und synchronisiert alle Sperrlisten, Rewrites und das Live-Query-Log.</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <input
                 type="text"
                 value={adguardUrlInput}
                 onChange={(e) => setAdguardUrlInput(e.target.value)}
                 placeholder="http://192.168.178.67:3001"
-                className="flex-1 px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-xs font-mono text-white"
+                className="sm:col-span-2 px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-xs font-mono text-white"
               />
-              <button
-                type="button"
-                onClick={async () => {
-                  await onMutateControl({
-                    action: "update_policy",
-                    adguardUrl: adguardUrlInput,
-                  });
-                  await onMutateAdGuard({
-                    action: "handshake",
-                    url: adguardUrlInput,
-                  });
-                  setHandshakeOk(true);
-                }}
-                className="px-4 py-2 rounded-xl text-xs font-mono font-bold"
-                style={{
-                  backgroundColor: currentTheme.colors.accent,
-                  color: "#050505",
-                }}
-              >
-                Live-Handshake prüfen
-              </button>
+              <input
+                type="text"
+                value={adguardUserInput}
+                onChange={(e) => setAdguardUserInput(e.target.value)}
+                placeholder="Benutzer (admin)"
+                className="px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-xs font-mono text-white"
+              />
             </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                setTestingHandshake(true);
+                await onMutateControl({
+                  action: "update_policy",
+                  adguardUrl: adguardUrlInput,
+                  adguardUsername: adguardUserInput,
+                });
+                await onMutateAdGuard({
+                  action: "handshake",
+                  url: adguardUrlInput,
+                });
+                setHandshakeOk(true);
+                setTestingHandshake(false);
+              }}
+              className="w-full py-2.5 px-4 rounded-xl text-xs font-mono font-bold transition-all hover:brightness-110"
+              style={{
+                backgroundColor: currentTheme.colors.accent,
+                color: "#050505",
+              }}
+            >
+              {testingHandshake
+                ? "Prüfe AdGuard API-Handshake..."
+                : "⚡ Live-Handshake prüfen & 1:1 Sync aktivieren"}
+            </button>
+
             {handshakeOk && (
               <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-mono text-emerald-300 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
                 <span>
-                  Verbindung bestätigt: AdGuard Home {policy.adguardVersion} auf{" "}
-                  {adguardUrlInput} antwortet (1:1 Sync bereit).
+                  Verbindung aktiv: AdGuard Home {policy.adguardVersion} auf{" "}
+                  <strong>{adguardUrlInput}</strong> ist gekoppelt!
                 </span>
               </div>
             )}
@@ -705,11 +800,23 @@ export function SetupWizardModal({
         {step === 3 && (
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-white">
-              3. Netzwerk-Check & Router rDNS-Auflösung
+              Schritt 3: Router (FRITZ!Box) &amp; Klarnamen-Auflösung (rDNS) verbinden
             </h3>
+            <div className="p-3.5 rounded-xl bg-black/50 border border-white/10 text-xs font-mono space-y-2 text-zinc-300">
+              <div className="text-white font-bold">Damit alle Geräte automatisch gefiltert und mit Namen erkannt werden:</div>
+              <div>
+                <strong>1. In der FRITZ!Box (<code className="text-white">http://192.168.178.1</code>):</strong><br />
+                Öffne <em>Heimnetz ➔ Netzwerk ➔ Netzwerkeinstellungen ➔ IPv4-Einstellungen</em> und trage unter <strong>Lokaler DNS-Server</strong> die IP <code className="text-emerald-400">192.168.178.67</code> (ohne Port) ein.
+              </div>
+              <div>
+                <strong>2. In AdGuard Home für Gerätenamen (rDNS):</strong><br />
+                Unter <em>Einstellungen ➔ DNS-Einstellungen ➔ Private Reverse-DNS-Server</em> die Router-IP <code className="text-emerald-400">192.168.178.1</code> eintragen. Dadurch zeigt das Panel automatisch Namen wie <code className="text-white">Predator-PC.fritz.box</code> statt nur IP-Adressen.
+              </div>
+            </div>
+
             <div className="p-4 rounded-xl bg-black/60 border border-white/10 font-mono text-xs space-y-2">
               <div className="flex justify-between">
-                <span className="text-zinc-400">Gateway / Router:</span>
+                <span className="text-zinc-400">Erkanntes Gateway:</span>
                 <span className="text-white font-bold">
                   {policy.routerGateway}
                 </span>
@@ -717,33 +824,40 @@ export function SetupWizardModal({
               <div className="flex justify-between">
                 <span className="text-zinc-400">Reverse-DNS (rDNS):</span>
                 <span className="text-emerald-400 font-bold">
-                  ✓ AKTIV (*.fritz.box -> Klarnamen)
+                  ✓ AKTIV (*.fritz.box ➔ Klarnamen)
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-400">Erkannte Clients:</span>
-                <span className="text-white">{devices.length} Geräte</span>
+                <span className="text-zinc-400">Synchronisierte Clients:</span>
+                <span className="text-white">{devices.length} Geräte im Cache</span>
               </div>
             </div>
           </div>
         )}
 
-        {/* Step 4: Admin Protection Whitelist */}
+        {/* Step 4: Admin Protection Whitelist & Cloudflare Zero Trust */}
         {step === 4 && (
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-white">
-              4. Admin-Schutz (Unblockierbare Whitelist)
+              Schritt 4: Cloudflare Zero Trust &amp; Admin-Schutz (Whitelist)
             </h3>
+
+            <div className="p-3.5 rounded-xl bg-black/50 border border-white/10 text-xs font-mono space-y-1.5 text-zinc-300">
+              <div className="text-white font-bold">So schützt du <code className="text-emerald-400">https://{PUBLIC_ZERO_TRUST_DOMAIN}</code> von außen:</div>
+              <div>1. In <strong>Cloudflare Zero Trust</strong> ➔ <em>Networks ➔ Tunnels</em> den Hostnamen <code className="text-white">{PUBLIC_ZERO_TRUST_DOMAIN}</code> auf <code className="text-white">http://localhost:3000</code> routen.</div>
+              <div>2. Unter <em>Access ➔ Applications</em> eine Self-Hosted App für <code className="text-white">{PUBLIC_ZERO_TRUST_DOMAIN}</code> mit <strong>Google Login</strong> anlegen.</div>
+              <div>3. Als Policy-Regel: <strong>Include ➔ Emails ➔ <code className="text-emerald-400">{ALLOWED_OWNER_EMAIL}</code></strong> setzen.</div>
+            </div>
+
             <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 font-mono text-xs space-y-2 text-emerald-200">
               <div className="flex items-center gap-2 font-bold text-white">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>Zero-Trust Owner & Admin-Workstation gesichert</span>
+                <span>Automatischer Admin-Schutz (Unblockierbare Whitelist)</span>
               </div>
               <p>
-                Konto <strong>{ALLOWED_OWNER_EMAIL}</strong> sowie{" "}
+                Dein Google-Konto <strong>{ALLOWED_OWNER_EMAIL}</strong> sowie{" "}
                 <strong>Predator-PC (192.168.178.24)</strong> und{" "}
-                <strong>ZimaOS (192.168.178.67)</strong> sind permanent gegen
-                Kill-Switch, Schlafenszeit und App-Sperren geschützt.
+                <strong>ZimaOS (192.168.178.67)</strong> sind fest in der Whitelist verankert – selbst beim Drücken des 🛑 <em>Notfall-Kill-Switch</em> bleibt dein eigener PC immer online.
               </p>
             </div>
           </div>
@@ -753,11 +867,14 @@ export function SetupWizardModal({
         {step === 5 && (
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-white">
-              5. Mobilfunk- & Hotspot-Schutz (DoH / DoT Profile)
+              Schritt 5: Handys gegen WLAN-Ausschalten &amp; 5G-Hotspot-Bypass sichern
             </h3>
-            <p className="text-xs font-mono text-zinc-400">
-              Lade das verschlüsselte Always-On DNS-Profil direkt für die verwalteten Smartphones herunter:
-            </p>
+            <div className="p-3.5 rounded-xl bg-black/50 border border-white/10 text-xs font-mono space-y-1.5 text-zinc-300">
+              <div className="text-white font-bold">So aktivierst du den Unterwegs-Schutz auf Smartphones:</div>
+              <div>• <strong>iPhone / iPad:</strong> Klicke unten neben dem Gerät auf <strong>„iOS .mobileconfig laden“</strong> und installiere das Profil in den iOS-Einstellungen (erzwingt verschlüsseltes DoH auch im 5G-Mobilfunknetz).</div>
+              <div>• <strong>Android:</strong> Trage unter <em>Einstellungen ➔ Netzwerk &amp; Internet ➔ Privates DNS</em> den angezeigten DoT-Hostnamen ein.</div>
+            </div>
+
             <div className="space-y-2">
               {devices
                 .filter((d) => !d.isAdminProtected)
@@ -769,7 +886,8 @@ export function SetupWizardModal({
                     <div>
                       <div className="font-bold text-white">{d.name}</div>
                       <div className="text-[10px] text-zinc-400">
-                        Android DoT: {d.id}.dot.labtoso.de
+                        Android Privates DNS:{" "}
+                        <code className="text-white">{d.id}.dot.labtoso.de</code>
                       </div>
                     </div>
                     <a
@@ -777,7 +895,7 @@ export function SetupWizardModal({
                         d.id
                       )}/mobileconfig?proto=doh`}
                       download
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold"
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:brightness-110"
                       style={{
                         backgroundColor: currentTheme.colors.accent,
                         color: "#050505",
@@ -802,38 +920,44 @@ export function SetupWizardModal({
             ← Zurück
           </button>
 
-          {step < 5 ? (
-            <button
-              type="button"
-              onClick={() => setStep((s) => Math.min(5, s + 1) as typeof step)}
-              className="px-4 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5"
-              style={{
-                backgroundColor: currentTheme.colors.accent,
-                color: "#050505",
-              }}
-            >
-              <span>Weiter</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={async () => {
-                await onMutateControl({
-                  action: "update_policy",
-                  onboardingCompleted: true,
-                });
-                onClose();
-              }}
-              className="px-5 py-2 rounded-xl text-xs font-mono font-bold"
-              style={{
-                backgroundColor: currentTheme.colors.accent,
-                color: "#050505",
-              }}
-            >
-              ✓ Setup abschließen
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {policy.onboardingCompleted && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-2 rounded-xl text-xs font-mono bg-white/5 text-zinc-300 hover:text-white"
+              >
+                Schließen
+              </button>
+            )}
+
+            {step < 5 ? (
+              <button
+                type="button"
+                onClick={() => setStep((s) => Math.min(5, s + 1) as typeof step)}
+                className="px-4 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5"
+                style={{
+                  backgroundColor: currentTheme.colors.accent,
+                  color: "#050505",
+                }}
+              >
+                <span>Nächster Schritt</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleFinishOrDismiss}
+                className="px-5 py-2 rounded-xl text-xs font-mono font-bold"
+                style={{
+                  backgroundColor: currentTheme.colors.accent,
+                  color: "#050505",
+                }}
+              >
+                ✓ Einrichtung dauerhaft abschließen
+              </button>
+            )}
+          </div>
         </div>
       </motion.div>
     </div>

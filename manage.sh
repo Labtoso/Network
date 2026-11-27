@@ -204,22 +204,26 @@ UNIT
     systemctl restart "$APP_NAME"
     info "Systemd service ${APP_NAME}.service started and enabled on boot."
 
-    # Optional Cloudflared tunnel service if token is configured in .env
+    # Cloudflare Tunnel service: uses CLOUDFLARE_TUNNEL_TOKEN if set, otherwise starts a free Quick Tunnel (trycloudflare.com) just like the Bots repo!
     local cf_token=""
     if [ -f "${APP_DIR}/.env" ]; then
       cf_token="$(grep -E '^CLOUDFLARE_TUNNEL_TOKEN=' "${APP_DIR}/.env" | cut -d= -f2- | tr -d ' "\r' || true)"
     fi
-    if [ -n "$cf_token" ] && command -v cloudflared >/dev/null 2>&1; then
-      say "Configuring Cloudflare Zero-Trust Tunnel service..."
+    if command -v cloudflared >/dev/null 2>&1; then
+      say "Configuring Cloudflare Tunnel service (${APP_NAME}-cloudflared.service)..."
+      local cf_exec="/usr/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:${PORT}"
+      if [ -n "$cf_token" ]; then
+        cf_exec="/usr/bin/cloudflared tunnel --no-autoupdate run --token ${cf_token}"
+      fi
       cat > "$CF_SERVICE_FILE" <<CFUNIT
 [Unit]
-Description=Cloudflare Zero-Trust Tunnel for ${DOMAIN}
+Description=Cloudflare Tunnel for Labtoso Network Control Suite
 After=network-online.target ${APP_NAME}.service
 
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate run --token ${cf_token}
+ExecStart=${cf_exec}
 Restart=always
 RestartSec=5
 
@@ -228,7 +232,17 @@ WantedBy=multi-user.target
 CFUNIT
       systemctl daemon-reload
       systemctl enable -q --now "${APP_NAME}-cloudflared"
-      info "Cloudflare Tunnel connected (${DOMAIN})."
+      info "Cloudflare Tunnel active (writes live URL into Proxmox Container Notes)."
+    fi
+
+    # Enable automatic 3-minute GitHub update timer (preserves all config & setup state)
+    if [ -f "${APP_DIR}/deploy/network-update.service" ] && [ -f "${APP_DIR}/deploy/network-update.timer" ]; then
+      sed "s|/opt/network|${APP_DIR}|g" "${APP_DIR}/deploy/network-update.service" > /etc/systemd/system/network-update.service
+      cp "${APP_DIR}/deploy/network-update.timer" /etc/systemd/system/network-update.timer
+      chmod +x "${APP_DIR}/deploy/network-update.sh" 2>/dev/null || true
+      systemctl daemon-reload
+      systemctl enable -q --now network-update.timer
+      info "Automatic updates enabled (checks GitHub every 3 minutes, keeps all config)."
     fi
   else
     warn "Systemd not active or not root. Start manually with: npm run start"
@@ -239,16 +253,33 @@ CFUNIT
 }
 
 # ----------------------------------------------------------------------------
-# 3. UPDATE COMMAND
+# 3. UPDATE COMMAND (PRESERVES ALL CONFIG, DB & SETUP STATE)
 # ----------------------------------------------------------------------------
 cmd_update() {
   banner
   cd "$APP_DIR"
   git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
 
-  say "Pulling latest updates from Git repository..."
+  if [ -x "${APP_DIR}/deploy/network-update.sh" ]; then
+    NETWORK_DIR="$APP_DIR" "${APP_DIR}/deploy/network-update.sh"
+    cmd_info
+    return 0
+  fi
+
+  say "Pulling latest updates from Git repository (preserving .env & data/)..."
+  local tmp_bak
+  tmp_bak="$(mktemp -d)"
+  [ -f ".env" ] && cp -a ".env" "$tmp_bak/.env"
+  [ -d "data" ] && cp -a "data" "$tmp_bak/data"
+  [ -d "certs" ] && cp -a "certs" "$tmp_bak/certs"
+
   git fetch --all --prune
-  git pull --ff-only
+  git reset --hard origin/main
+
+  [ -f "$tmp_bak/.env" ] && cp -a "$tmp_bak/.env" ".env"
+  [ -d "$tmp_bak/data" ] && { mkdir -p data; cp -a "$tmp_bak/data/." "data/"; }
+  [ -d "$tmp_bak/certs" ] && { mkdir -p certs; cp -a "$tmp_bak/certs/." "certs/"; }
+  rm -rf "$tmp_bak"
 
   say "Updating dependencies, migrating SQLite & rebuilding project..."
   if [ -f "package-lock.json" ]; then

@@ -61,12 +61,12 @@ secret() { whiptail --backtitle "$TITLE" --title "$1" --passwordbox "$2" 13 74 3
 yesno()  { whiptail --backtitle "$TITLE" --title "$1" --yesno "$2" 11 72; }
 num()    { [[ "$1" =~ ^[0-9]+$ ]] || die "$2 must be a number (got \"$1\")."; }
 
-# ---------- Notes in the Proxmox UI (Like msik-notes / aio-notes) ----------
+# ---------- Notes in the Proxmox UI (Exactly like CT 102 Bots Summary -> Notes) ----------
 install_notes() {
   cat > /usr/local/bin/network-notes <<'NOTES'
 #!/usr/bin/env bash
-# Writes the Labtoso Network Control Suite addresses into the Notes of network-admin containers
-# (Proxmox UI: container -> Summary). Refreshed every 2 minutes by network-notes.timer.
+# Writes the Labtoso Network Control Suite address into the Notes of network-admin containers
+# (Proxmox UI: container -> Summary -> Notes). Refreshed every 2 minutes by network-notes.timer.
 set -uo pipefail
 state=/run/network-notes; mkdir -p "$state"
 ids="$*"; [ -n "$ids" ] || ids=$(pct list 2>/dev/null | awk 'NR>1 && $2=="running" {print $1}')
@@ -75,27 +75,34 @@ for id in $ids; do
   [ "$(pct status "$id" 2>/dev/null | awk '{print $2}')" = running ] || continue
   ip=$(pct exec "$id" -- hostname -I 2>/dev/null | awk '{print $1}')
   ts_ip=$(pct exec "$id" -- tailscale ip -4 2>/dev/null | head -n1)
-  domain=$(pct exec "$id" -- sh -c 'grep -m1 "^PUBLIC_DOMAIN=" /opt/network/.env 2>/dev/null | cut -d= -f2-' 2>/dev/null)
-  domain="${domain:-admin.labtoso.de}"
-  url="https://${domain}"
-  echo "$id $url ${ip:-}"
-  desc="## 🛡️ Labtoso Network Control Suite
+  url=$(pct exec "$id" -- sh -c '
+    tok=$(grep -m1 "^CLOUDFLARE_TUNNEL_TOKEN=" /opt/network/.env 2>/dev/null | cut -d= -f2-)
+    dom=$(grep -m1 "^PUBLIC_DOMAIN=" /opt/network/.env 2>/dev/null | cut -d= -f2-)
+    if [ -n "$tok" ] && [ -n "$dom" ]; then
+      echo "https://$dom"
+    else
+      q=$(journalctl -u network-admin-cloudflared -b --no-pager -o cat 2>/dev/null | grep -o "https://[-a-z0-9]*\.trycloudflare\.com" | tail -1)
+      [ -n "$q" ] && echo "$q" || echo "http://$(hostname -I 2>/dev/null | awk "{print \$1}"):3000"
+    fi
+  ' 2>/dev/null)
+  echo "$id ${url:-}"
+  desc="## 🛡️ Network Control Suite
 
-**Zero-Trust Dashboard & AdGuard 1:1 Mirror** (Google OAuth: \`sebirauch2022@gmail.com\`):
+**Panel-Adresse** (zum Öffnen oder Kopieren, Zero-Trust & AdGuard 1:1 Dashboard):
 
 \`\`\`
-$url
+${url:-wird noch ermittelt, Panel startet gerade ...}
 \`\`\`
 
-- Öffentliches Panel (Cloudflare Zero Trust): [$domain]($url)
-- Lokales Heimnetz-Panel: \`http://${ip:-127.0.0.1}:3000\`
-- Tailscale Fallback-IP: \`http://${ts_ip:-noch nicht verbunden}:3000\`
-- 5G / Hotspot Roaming DoH: \`$url/api/dns-query/{client_id}\`
-- iOS Anti-Bypass Profil: \`$url/api/profiles/{client_id}/mobileconfig\`
+- Dashboard: [admin.labtoso.de](https://admin.labtoso.de)
+- Direkt im Heimnetz: [http://${ip:-?}:3000](http://${ip:-127.0.0.1}:3000)
+- Tailscale-IP: \`${ts_ip:-nicht verbunden}\`
+- 5G / Hotspot Roaming-DoH: \`${url:-https://admin.labtoso.de}/api/dns-query/{client_id}\`
+- Container-IP: ${ip:-?}
 
-Logs: \`pct exec $id -- /opt/network/manage.sh logs\` · Info: \`pct exec $id -- /opt/network/manage.sh info\` · Update: Proxmox-Script nochmal ausführen (oder automatisch alle 15 Minuten)
+Logs: \`journalctl -u network-admin -f\` (Konsole des Containers) · Update: Proxmox-Script nochmal ausführen (oder automatisch alle 3 Minuten)
 
-_Die Notiz aktualisiert sich hier alle 2 Minuten von selbst (network-notes.timer auf dem Host)._"
+_Die Adresse aktualisiert sich hier alle 2 Minuten von selbst (network-notes.timer auf dem Host)._"
   sum=$(printf '%s' "$desc" | md5sum | cut -d' ' -f1)
   [ "$(cat "$state/$id" 2>/dev/null)" = "$sum" ] && continue
   pct set "$id" --description "$desc" && echo "$sum" > "$state/$id"
@@ -127,17 +134,22 @@ UNIT
 }
 
 show_backend() {
-  local id="$1" line="" url="" ip=""
-  info "Waiting for the Network Control Suite to come online"
-  line=$(/usr/local/bin/network-notes "$id" | head -n1)
-  url=$(echo "$line" | awk '{print $2}')
-  ip=$(echo "$line" | awk '{print $3}')
+  local id="$1" url="" i
+  info "Waiting for the Panel address (writing into Proxmox Container Summary -> Notes)"
+  for i in $(seq 1 30); do
+    url=$(/usr/local/bin/network-notes "$id" | awk '{print $2}')
+    [ -n "$url" ] && break
+    sleep 2
+  done
   rm -f "/run/network-notes/$id"; /usr/local/bin/network-notes "$id" >/dev/null
   echo
-  printf "  ${c_b}Zero-Trust Panel (Cloudflare Access · sebirauch2022@gmail.com):${c_off}\n\n"
-  printf "    ${c_ok}${c_b}%s${c_off}\n\n" "${url:-https://admin.labtoso.de}"
-  [ -n "$ip" ] && printf "  ${c_b}Direct LAN Panel:${c_off}  ${c_ok}http://%s:3000${c_off}\n" "$ip"
-  printf "  ${c_b}Roaming 5G DoH:${c_off}    ${c_ok}%s/api/dns-query/{client_id}${c_off}\n\n" "${url:-https://admin.labtoso.de}"
+  if [ -n "$url" ]; then
+    printf "  ${c_b}Panel-Adresse (steht auch in Proxmox unter Container %s -> Summary -> Notes):${c_off}\n\n" "$id"
+    printf "    ${c_ok}${c_b}%s${c_off}\n\n" "$url"
+  else
+    echo "  The panel address shows up in a moment in the container's Notes."
+    echo
+  fi
   echo "  Always up to date in the Proxmox UI: container $id -> Summary -> Notes."
 }
 

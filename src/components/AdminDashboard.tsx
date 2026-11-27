@@ -331,6 +331,15 @@ export default function AdminDashboard() {
         const ctrlData = await ctrlRes.json();
         if (ctrlData?.policy && Array.isArray(ctrlData?.devices)) {
           setControlState(ctrlData);
+          try {
+            const localDone =
+              localStorage.getItem("labtoso-setup-completed") === "true";
+            if (!ctrlData.policy.onboardingCompleted && !localDone) {
+              setWizardOpen(true);
+            }
+          } catch {
+            // ignore
+          }
         }
       }
     } catch {
