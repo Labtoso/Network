@@ -1,0 +1,8 @@
+[Unit]
+Description=Check GitHub for Labtoso Network updates
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/network/deploy/network-update.sh

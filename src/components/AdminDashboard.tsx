@@ -221,6 +221,7 @@ export default function AdminDashboard() {
   const [activeCliCmd, setActiveCliCmd] = useState<
     "info" | "status" | "logs" | "install" | "update" | "proxmox"
   >("info");
+  const [installerOsTab, setInstallerOsTab] = useState<"proxmox" | "linux" | "win">("proxmox");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [liveLogs, setLiveLogs] = useState<string[]>([
     "[22:30:01] [ZERO-TRUST] Policy verified: Cf-Access-Authenticated-User-Email = sebirauch2022@gmail.com",
@@ -1909,10 +1910,10 @@ export default function AdminDashboard() {
                 </div>
               </section>
 
-              {/* Right 5 Columns: Proxmox 1-Click Installer & Management CLI */}
+              {/* Right 5 Columns: Bots-Style Multi-OS Installer & Management CLI */}
               <section className="lg:col-span-5 space-y-6">
                 <div
-                  className="rounded-xl p-5 backdrop-blur-xl space-y-3.5"
+                  className="rounded-xl p-5 backdrop-blur-xl space-y-4"
                   style={{
                     backgroundColor: currentTheme.colors.bgPanel,
                     border: `1px solid ${currentTheme.colors.borderStrong}`,
@@ -1925,7 +1926,7 @@ export default function AdminDashboard() {
                         style={{ color: currentTheme.colors.accent }}
                       />
                       <h2 className="text-sm sm:text-base font-semibold text-white">
-                        Proxmox VE 1-Befehl Auto-Installer
+                        Network installieren (Proxmox · Linux · Windows)
                       </h2>
                     </div>
                     <span
@@ -1935,45 +1936,174 @@ export default function AdminDashboard() {
                         color: currentTheme.colors.accent,
                       }}
                     >
-                      ZERO-FRICTION LXC
+                      BOTS-STYLE INSTALLER
                     </span>
                   </div>
 
-                  <p className="text-xs text-zinc-400 leading-relaxed">
-                    Erstellt automatisch den Debian 12 LXC, installiert alle System-, Runtime- & Prisma-Abhängigkeiten, generiert die Root-CA und startet das Panel.
-                  </p>
-
+                  {/* OS Tabs like bot.labtoso.de */}
                   <div
-                    className="rounded-lg p-3 font-mono text-xs flex items-center justify-between gap-2"
+                    className="inline-flex gap-1 p-1 rounded-lg"
                     style={{
-                      backgroundColor: "rgba(0, 0, 0, 0.65)",
+                      backgroundColor: "rgba(0, 0, 0, 0.45)",
                       border: `1px solid ${currentTheme.colors.border}`,
                     }}
                   >
-                    <code
-                      className="truncate select-all"
-                      style={{ color: currentTheme.colors.accent }}
-                    >
-                      {`bash -c "$(curl -fsSL https://raw.githubusercontent.com/Labtoso/Network/main/install.sh)"`}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleCopy(
-                          "proxmox-cmd",
-                          `bash -c "$(curl -fsSL https://raw.githubusercontent.com/Labtoso/Network/main/install.sh)"`
-                        )
-                      }
-                      className="px-2.5 py-1 rounded text-xs font-mono shrink-0 flex items-center gap-1 hover:bg-white/10"
-                      style={{
-                        border: `1px solid ${currentTheme.colors.borderStrong}`,
-                        color: currentTheme.colors.textPrimary,
-                      }}
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Kopieren</span>
-                    </button>
+                    {(
+                      [
+                        { id: "proxmox", label: "Proxmox VE" },
+                        { id: "linux", label: "Linux / VPS" },
+                        { id: "win", label: "Windows" },
+                      ] as const
+                    ).map((t) => {
+                      const on = installerOsTab === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setInstallerOsTab(t.id)}
+                          className="px-3 py-1.5 rounded-md text-xs font-mono font-semibold transition-all"
+                          style={{
+                            backgroundColor: on
+                              ? currentTheme.colors.accentMuted
+                              : "transparent",
+                            color: on ? currentTheme.colors.accent : "#94A3B8",
+                          }}
+                        >
+                          {t.label}
+                        </button>
+                      );
+                    })}
                   </div>
+
+                  {installerOsTab === "proxmox" && (
+                    <div className="space-y-2.5">
+                      <div
+                        className="rounded-xl p-3 font-mono text-xs flex items-center justify-between gap-2"
+                        style={{
+                          backgroundColor: "rgba(0, 0, 0, 0.65)",
+                          border: `1px solid ${currentTheme.colors.border}`,
+                        }}
+                      >
+                        <code
+                          className="truncate select-all"
+                          style={{ color: currentTheme.colors.accent }}
+                        >
+                          {`bash -c "$(curl -fsSL https://raw.githubusercontent.com/Labtoso/Network/main/install.sh)"`}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCopy(
+                              "proxmox-cmd",
+                              `bash -c "$(curl -fsSL https://raw.githubusercontent.com/Labtoso/Network/main/install.sh)"`
+                            )
+                          }
+                          className="px-3 py-1 rounded-lg text-xs font-mono shrink-0 transition-colors hover:bg-white/10"
+                          style={{
+                            border: `1px solid ${currentTheme.colors.borderStrong}`,
+                            color: currentTheme.colors.textPrimary,
+                          }}
+                        >
+                          {copiedKey === "proxmox-cmd" ? "Kopiert" : "Kopieren"}
+                        </button>
+                      </div>
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        In der Shell des Proxmox-Hosts einfügen. Legt einen eigenen Debian-12-LXC an, fragt nach Tailscale &amp; Cloudflare Tunnel Token, schreibt die Adresse in die Container-Notizen (<code className="text-white">network-notes.timer</code>) und aktualisiert sich alle 15 Minuten selbst. Nochmal ausführen = Update.
+                      </p>
+                    </div>
+                  )}
+
+                  {installerOsTab === "linux" && (
+                    <div className="space-y-2.5">
+                      <div
+                        className="rounded-xl p-3 font-mono text-xs flex items-center justify-between gap-2"
+                        style={{
+                          backgroundColor: "rgba(0, 0, 0, 0.65)",
+                          border: `1px solid ${currentTheme.colors.border}`,
+                        }}
+                      >
+                        <code
+                          className="truncate select-all"
+                          style={{ color: currentTheme.colors.accent }}
+                        >
+                          {`curl -fsSL https://raw.githubusercontent.com/Labtoso/Network/main/install.sh | sudo bash`}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCopy(
+                              "linux-cmd",
+                              `curl -fsSL https://raw.githubusercontent.com/Labtoso/Network/main/install.sh | sudo bash`
+                            )
+                          }
+                          className="px-3 py-1 rounded-lg text-xs font-mono shrink-0 transition-colors hover:bg-white/10"
+                          style={{
+                            border: `1px solid ${currentTheme.colors.borderStrong}`,
+                            color: currentTheme.colors.textPrimary,
+                          }}
+                        >
+                          {copiedKey === "linux-cmd" ? "Kopiert" : "Kopieren"}
+                        </button>
+                      </div>
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        Debian, Ubuntu oder Fedora. Installiert Node.js 22 LTS, Docker, Tailscale, Root-CA &amp; SQLite, läuft als Dienst <code className="text-white">network-admin</code> und hält sich über <code className="text-white">network-update.timer</code> aktuell.
+                      </p>
+                    </div>
+                  )}
+
+                  {installerOsTab === "win" && (
+                    <div className="space-y-2.5">
+                      <div>
+                        <a
+                          href="/Install.bat"
+                          download="Install.bat"
+                          className="inline-block px-3.5 py-2 rounded-lg text-xs font-mono font-bold transition-all hover:brightness-110"
+                          style={{
+                            backgroundColor: currentTheme.colors.accent,
+                            color: "#050505",
+                          }}
+                        >
+                          Install.bat herunterladen
+                        </a>
+                      </div>
+                      <div className="text-xs text-zinc-400">
+                        Oder in PowerShell einfügen:
+                      </div>
+                      <div
+                        className="rounded-xl p-3 font-mono text-xs flex items-center justify-between gap-2"
+                        style={{
+                          backgroundColor: "rgba(0, 0, 0, 0.65)",
+                          border: `1px solid ${currentTheme.colors.border}`,
+                        }}
+                      >
+                        <code
+                          className="truncate select-all"
+                          style={{ color: currentTheme.colors.accent }}
+                        >
+                          {`irm https://raw.githubusercontent.com/Labtoso/Network/main/install.ps1 | iex`}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCopy(
+                              "win-cmd",
+                              `irm https://raw.githubusercontent.com/Labtoso/Network/main/install.ps1 | iex`
+                            )
+                          }
+                          className="px-3 py-1 rounded-lg text-xs font-mono shrink-0 transition-colors hover:bg-white/10"
+                          style={{
+                            border: `1px solid ${currentTheme.colors.borderStrong}`,
+                            color: currentTheme.colors.textPrimary,
+                          }}
+                        >
+                          {copiedKey === "win-cmd" ? "Kopiert" : "Kopieren"}
+                        </button>
+                      </div>
+                      <p className="text-xs text-zinc-400">
+                        Keine extra Rechte nötig, portables Node.js LTS ist dabei. Installiert nach <code className="text-white">%LOCALAPPDATA%\LabtosoNetwork</code>.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Management CLI Console */}

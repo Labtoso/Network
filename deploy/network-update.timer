@@ -1,0 +1,10 @@
+[Unit]
+Description=Update Labtoso Network Control Suite every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+RandomizedDelaySec=20s
+
+[Install]
+WantedBy=timers.target

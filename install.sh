@@ -1,112 +1,59 @@
 #!/usr/bin/env bash
-# ============================================================================
-# LABTOSO NETWORK CONTROL SUITE - PROXMOX VE 1-COMMAND LXC AUTO-INSTALLER
-# Run in the Proxmox VE Host Shell as root:
+# Labtoso Network Control Suite for Proxmox VE: creates a Debian 12 LXC container and installs the panel inside.
+# Run in the Proxmox host shell (Datacenter -> your node -> Shell) as root:
+#
 #   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Labtoso/Network/main/install.sh)"
-# ============================================================================
+#   or
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Labtoso/Network/main/proxmox.sh)"
+#
+# Run it again to update an existing Network container (keeps everything) or to create another one.
 set -Eeuo pipefail
 export LANG=C.UTF-8 LC_ALL=C.UTF-8 LANGUAGE=
 
 REPO_URL="https://github.com/Labtoso/Network.git"
 BRANCH="main"
 INSTALL_DIR="/opt/network"
-TITLE="Labtoso Network Control Panel"
+TITLE="Labtoso Network Control Suite"
 TAG="network-admin"
 PUBLIC_DOMAIN="admin.labtoso.de"
 ALLOWED_EMAIL="sebirauch2022@gmail.com"
 
-c_blue="\033[38;5;39m"
-c_ok="\033[32m"
-c_err="\033[31m"
-c_dim="\033[2m"
-c_b="\033[1m"
-c_off="\033[0m"
-
+c_ok="\033[32m"; c_err="\033[31m"; c_dim="\033[2m"; c_b="\033[1m"; c_off="\033[0m"
 say()  { printf " ${c_ok}✓${c_off} %s\n" "$*"; }
 info() { printf " ${c_dim}…${c_off} %s\n" "$*"; }
 die()  { printf "\n ${c_err}✗ %s${c_off}\n\n" "$*" >&2; exit 1; }
 trap 'die "Failed in line $LINENO: $BASH_COMMAND"' ERR
 
-banner() {
-  clear 2>/dev/null || true
-  printf "${c_blue}${c_b}"
-  cat <<'EOF'
-    __          __    __                   _   __     __                      __  
-   / /   ____ _/ /_  / /_____  ________   / | / /__  / /___      ______  ____/ /__
-  / /   / __ `/ __ \/ __/ __ \/ ___/ __ \/  |/ / _ \/ __/ | /| / / __ \/ ___/ //_/
- / /___/ /_/ / /_/ / /_/ /_/ (__  ) /_/ / /|  /  __/ /_ | |/ |/ / /_/ / /  / ,<   
-/_____/\__,_/_.___/\__/\____/____/\____/_/ |_/\___/\__/ |__/|__/\____/_/  /_/|_|  
-EOF
-  printf "${c_off}\n"
-}
-
-[ "$(id -u)" -eq 0 ] || die "Please run this script as root."
+[ "$(id -u)" -eq 0 ] || die "Please run this as root in the Proxmox host shell (or with sudo on Linux)."
 if [ ! -t 0 ] && (exec </dev/tty) 2>/dev/null; then exec </dev/tty; fi
 
-# ----------------------------------------------------------------------------
-# CASE A: RUNNING INSIDE AN EXISTING DEBIAN/UBUNTU CONTAINER OR VPS
-# ----------------------------------------------------------------------------
+# ---------- Direct Linux / VPS Fallback when not on a Proxmox Host ----------
 if ! command -v pveversion >/dev/null 2>&1 || ! command -v pct >/dev/null 2>&1; then
-  banner
-  printf "  ${c_b}%s${c_off} · Direct Linux Server / LXC Guest Installer\n\n" "$TITLE"
-
-  info "Installing base packages (curl, wget, git, jq, openssl, ca-certificates, iptables)..."
+  clear 2>/dev/null || true
+  printf "\n  ${c_b}%s${c_off} · Linux / VPS Installer\n\n" "$TITLE"
+  info "Installing system packages (curl, wget, git, jq, openssl, ca-certificates, iptables)"
   apt-get update -qq >/dev/null
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl wget git jq openssl ca-certificates gnupg iptables >/dev/null
-  say "Base system packages ready"
-
-  if ! command -v node >/dev/null 2>&1 || [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -lt 20 ]; then
-    info "Installing Node.js 22 LTS & pnpm..."
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs >/dev/null
-  fi
-  npm install -g pnpm --loglevel=error >/dev/null 2>&1 || true
-  say "Node.js $(node -v) & npm $(npm -v) installed"
-
-  if ! command -v docker >/dev/null 2>&1; then
-    info "Installing Docker & Docker Compose..."
-    curl -fsSL https://get.docker.com | sh >/dev/null 2>&1 || true
-    say "Docker engine ready"
-  fi
-
-  if ! command -v tailscale >/dev/null 2>&1; then
-    info "Installing Tailscale..."
-    curl -fsSL https://tailscale.com/install.sh | sh >/dev/null 2>&1 || true
-    say "Tailscale ready"
-  fi
-
-  if ! command -v cloudflared >/dev/null 2>&1; then
-    info "Installing Cloudflared..."
-    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
-    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared bookworm main" > /etc/apt/sources.list.d/cloudflared.list
-    apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cloudflared >/dev/null || true
-    say "Cloudflared installed"
-  fi
+  say "System packages installed"
 
   if [ -d "$INSTALL_DIR/.git" ]; then
-    info "Updating existing repository in $INSTALL_DIR..."
-    git -c safe.directory=* -C "$INSTALL_DIR" fetch -q origin "$BRANCH"
-    git -c safe.directory=* -C "$INSTALL_DIR" reset -q --hard FETCH_HEAD
+    git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" fetch -q --depth 1 origin "$BRANCH"
+    git -c safe.directory="$INSTALL_DIR" -C "$INSTALL_DIR" reset -q --hard FETCH_HEAD
   else
-    info "Cloning $REPO_URL into $INSTALL_DIR..."
     rm -rf "$INSTALL_DIR"
     git clone -q --depth 1 --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
   fi
-
-  chmod +x "$INSTALL_DIR/manage.sh" "$INSTALL_DIR/admin.sh"
+  chmod +x "$INSTALL_DIR/manage.sh" "$INSTALL_DIR/admin.sh" "$INSTALL_DIR/deploy/"*.sh 2>/dev/null || true
   cd "$INSTALL_DIR"
   ./manage.sh install
   exit 0
 fi
 
-# ----------------------------------------------------------------------------
-# CASE B: RUNNING ON A PROXMOX VE HOST SHELL (CREATES DEBIAN 12 LXC)
-# ----------------------------------------------------------------------------
-command -v whiptail >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq whiptail >/dev/null; }
+# ---------- Proxmox VE Host Mode (Just like Labtoso/Bots proxmox.sh) ----------
+command -v whiptail >/dev/null || { apt-get update -qq && apt-get install -y -qq whiptail >/dev/null; }
 
-banner
-printf "  ${c_b}%s${c_off} · Proxmox VE LXC Auto-Installer\n" "$TITLE"
-printf "  ${c_dim}%s${c_off}\n\n" "$(pveversion | cut -d/ -f1-2)"
+clear 2>/dev/null || true
+printf "\n  ${c_b}%s${c_off} · Proxmox LXC installer\n  ${c_dim}%s${c_off}\n\n" "$TITLE" "$(pveversion | cut -d/ -f1-2)"
 
 cancel() { clear 2>/dev/null || true; echo "Cancelled, nothing was changed."; exit 0; }
 input()  { whiptail --backtitle "$TITLE" --title "$1" --inputbox "$2" 11 72 "${3:-}" 3>&1 1>&2 2>&3 || cancel; }
@@ -114,45 +61,122 @@ secret() { whiptail --backtitle "$TITLE" --title "$1" --passwordbox "$2" 13 74 3
 yesno()  { whiptail --backtitle "$TITLE" --title "$1" --yesno "$2" 11 72; }
 num()    { [[ "$1" =~ ^[0-9]+$ ]] || die "$2 must be a number (got \"$1\")."; }
 
-# ---------- Existing Container Update Check ----------
+# ---------- Notes in the Proxmox UI (Like msik-notes / aio-notes) ----------
+install_notes() {
+  cat > /usr/local/bin/network-notes <<'NOTES'
+#!/usr/bin/env bash
+# Writes the Labtoso Network Control Suite addresses into the Notes of network-admin containers
+# (Proxmox UI: container -> Summary). Refreshed every 2 minutes by network-notes.timer.
+set -uo pipefail
+state=/run/network-notes; mkdir -p "$state"
+ids="$*"; [ -n "$ids" ] || ids=$(pct list 2>/dev/null | awk 'NR>1 && $2=="running" {print $1}')
+for id in $ids; do
+  pct config "$id" 2>/dev/null | grep -qE '^tags:.*\bnetwork-admin\b' || continue
+  [ "$(pct status "$id" 2>/dev/null | awk '{print $2}')" = running ] || continue
+  ip=$(pct exec "$id" -- hostname -I 2>/dev/null | awk '{print $1}')
+  ts_ip=$(pct exec "$id" -- tailscale ip -4 2>/dev/null | head -n1)
+  domain=$(pct exec "$id" -- sh -c 'grep -m1 "^PUBLIC_DOMAIN=" /opt/network/.env 2>/dev/null | cut -d= -f2-' 2>/dev/null)
+  domain="${domain:-admin.labtoso.de}"
+  url="https://${domain}"
+  echo "$id $url ${ip:-}"
+  desc="## 🛡️ Labtoso Network Control Suite
+
+**Zero-Trust Dashboard & AdGuard 1:1 Mirror** (Google OAuth: \`sebirauch2022@gmail.com\`):
+
+\`\`\`
+$url
+\`\`\`
+
+- Öffentliches Panel (Cloudflare Zero Trust): [$domain]($url)
+- Lokales Heimnetz-Panel: \`http://${ip:-127.0.0.1}:3000\`
+- Tailscale Fallback-IP: \`http://${ts_ip:-noch nicht verbunden}:3000\`
+- 5G / Hotspot Roaming DoH: \`$url/api/dns-query/{client_id}\`
+- iOS Anti-Bypass Profil: \`$url/api/profiles/{client_id}/mobileconfig\`
+
+Logs: \`pct exec $id -- /opt/network/manage.sh logs\` · Info: \`pct exec $id -- /opt/network/manage.sh info\` · Update: Proxmox-Script nochmal ausführen (oder automatisch alle 15 Minuten)
+
+_Die Notiz aktualisiert sich hier alle 2 Minuten von selbst (network-notes.timer auf dem Host)._"
+  sum=$(printf '%s' "$desc" | md5sum | cut -d' ' -f1)
+  [ "$(cat "$state/$id" 2>/dev/null)" = "$sum" ] && continue
+  pct set "$id" --description "$desc" && echo "$sum" > "$state/$id"
+done
+NOTES
+  chmod 755 /usr/local/bin/network-notes
+  cat > /etc/systemd/system/network-notes.service <<'UNIT'
+[Unit]
+Description=Write the Labtoso Network address into the container notes
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/network-notes
+StandardOutput=null
+UNIT
+  cat > /etc/systemd/system/network-notes.timer <<'UNIT'
+[Unit]
+Description=Refresh the Labtoso Network container notes every 2 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable -q --now network-notes.timer
+}
+
+show_backend() {
+  local id="$1" line="" url="" ip=""
+  info "Waiting for the Network Control Suite to come online"
+  line=$(/usr/local/bin/network-notes "$id" | head -n1)
+  url=$(echo "$line" | awk '{print $2}')
+  ip=$(echo "$line" | awk '{print $3}')
+  rm -f "/run/network-notes/$id"; /usr/local/bin/network-notes "$id" >/dev/null
+  echo
+  printf "  ${c_b}Zero-Trust Panel (Cloudflare Access · sebirauch2022@gmail.com):${c_off}\n\n"
+  printf "    ${c_ok}${c_b}%s${c_off}\n\n" "${url:-https://admin.labtoso.de}"
+  [ -n "$ip" ] && printf "  ${c_b}Direct LAN Panel:${c_off}  ${c_ok}http://%s:3000${c_off}\n" "$ip"
+  printf "  ${c_b}Roaming 5G DoH:${c_off}    ${c_ok}%s/api/dns-query/{client_id}${c_off}\n\n" "${url:-https://admin.labtoso.de}"
+  echo "  Always up to date in the Proxmox UI: container $id -> Summary -> Notes."
+}
+
+cores_for() { local n; n=$(nproc 2>/dev/null || echo 2); echo $(( n < 2 ? n : 2 )); }
+
+# ---------- Update an existing container ----------
 existing=()
 while read -r id _ name; do
   [ -n "${id:-}" ] || continue
-  if pct config "$id" 2>/dev/null | grep -q "^tags:.*${TAG}"; then
-    existing+=("$id" "$name")
-  fi
+  if pct config "$id" 2>/dev/null | grep -qE "^tags:.*\b${TAG}\b"; then existing+=("$id" "$name"); fi
 done < <(pct list 2>/dev/null | awk 'NR>1 {print $1, $2, $NF}')
 
 if [ "${#existing[@]}" -gt 0 ]; then
-  choice=$(whiptail --backtitle "$TITLE" --title "Existing Container Found" --menu \
-    "A Labtoso Network Admin container already exists on this Proxmox node." 15 72 4 \
-    "update" "Update the Admin Panel in the existing container" \
-    "new" "Create a new separate LXC container" 3>&1 1>&2 2>&3) || cancel
-  if [ "$choice" = "update" ]; then
-    CT="${existing[0]}"
-    [ "$(pct status "$CT" | awk '{print $2}')" = "running" ] || { info "Starting container $CT"; pct start "$CT"; sleep 4; }
-    info "Updating Labtoso Network Control Panel in CT $CT..."
+  choice=$(whiptail --backtitle "$TITLE" --title "Network Control Suite found" --menu \
+    "There is already a Labtoso Network container on this node. What do you want to do?" 15 72 6 \
+    "update" "Update the panel in an existing container (keeps all settings)" \
+    "new" "Create another Network container" 3>&1 1>&2 2>&3) || cancel
+  if [ "$choice" = update ]; then
+    if [ "${#existing[@]}" -eq 2 ]; then CT="${existing[0]}"; else
+      CT=$(whiptail --backtitle "$TITLE" --title "Update" --menu "Which container?" 15 60 6 "${existing[@]}" 3>&1 1>&2 2>&3) || cancel
+    fi
+    clear 2>/dev/null || true
+    [ "$(pct status "$CT" | awk '{print $2}')" = running ] || { info "Starting container $CT"; pct start "$CT"; sleep 5; }
+    want=$(cores_for); cur=$(pct config "$CT" | awk '/^cores:/ {print $2}')
+    if [ "${cur:-0}" != "$want" ]; then pct set "$CT" --cores "$want"; say "Container $CT now uses $want CPU cores"; fi
+    info "Updating Labtoso Network in container $CT (keeps tokens, SQLite DB & settings)"
     pct exec "$CT" -- bash -c "cd $INSTALL_DIR && ./manage.sh update"
-    say "Container $CT updated successfully!"
+    say "Container $CT is up to date."
+    install_notes
+    show_backend "$CT"
+    echo
     exit 0
   fi
 fi
 
-# ---------- Container Defaults ----------
+# ---------- Defaults ----------
 CTID=$(pvesh get /cluster/nextid)
-HOST_CORES=$(nproc 2>/dev/null || echo 2)
-WANT_CORES=$(( HOST_CORES < 2 ? HOST_CORES : 2 ))
-HN="network-admin"
-CORES=$WANT_CORES
-RAM=2048
-DISK=8
-BRIDGE="vmbr0"
-NET="dhcp"
-GATE=""
-DNS=""
-VLAN=""
-UNPRIV=1
-PW=""
+HN="network-admin"; CORES=$(cores_for); RAM=2048; DISK=8; BRIDGE="vmbr0"; NET="dhcp"; GATE=""; VLAN=""; PW=""
+UNPRIV=1; AUTOUPDATE=1; DNS=""; ADGUARD_URL="http://192.168.178.67:3001"
 
 pick_storage() {
   local content="$1" label="$2" list=() n
@@ -164,85 +188,81 @@ pick_storage() {
   [ "$n" -gt 0 ] || die "No active storage for $label ($content) found."
   if [ "$n" -eq 1 ]; then echo "${list[0]}"; return; fi
   list[2]="ON"
-  whiptail --backtitle "$TITLE" --title "Storage Selection" --radiolist \
-    "Select storage for $label (Space to select):" 16 72 6 "${list[@]}" 3>&1 1>&2 2>&3 || cancel
+  whiptail --backtitle "$TITLE" --title "Storage" --radiolist \
+    "Where should the $label go? (Space to select)" 16 70 6 "${list[@]}" 3>&1 1>&2 2>&3 || cancel
 }
 
-MODE=$(whiptail --backtitle "$TITLE" --title "Labtoso Network on Proxmox VE" --menu \
-  "Creates an unprivileged Debian 12 LXC container (Nesting enabled) and installs the Zero-Trust Admin Panel, Docker, Tailscale & Cloudflared.\n\nDefaults: ID $CTID, $CORES vCPU, ${RAM} MB RAM, ${DISK} GB Disk, $BRIDGE (DHCP)." 17 74 2 \
-  "simple" "Standard Installation (Recommended)" \
-  "advanced" "Customize Container ID, CPU, RAM, Static IP & VLAN" 3>&1 1>&2 2>&3) || cancel
+MODE=$(whiptail --backtitle "$TITLE" --title "Labtoso Network on Proxmox" --menu \
+  "Creates a Debian 12 LXC container and installs the Zero-Trust Admin Panel, AdGuard 1:1 Mirror, Docker & Tailscale.\n\nDefaults: ID $CTID, $CORES CPU, 2 GB RAM, 8 GB disk, $BRIDGE with DHCP." 16 74 2 \
+  "simple" "Use the defaults (recommended)" \
+  "advanced" "Choose ID, resources, network and more" 3>&1 1>&2 2>&3) || cancel
 
-if [ "$MODE" = "advanced" ]; then
-  CTID=$(input "Container ID" "LXC Container ID:" "$CTID"); num "$CTID" "Container ID"
+if [ "$MODE" = advanced ]; then
+  CTID=$(input "Container ID" "Container ID:" "$CTID"); num "$CTID" "Container ID"
   if pct status "$CTID" >/dev/null 2>&1 || qm status "$CTID" >/dev/null 2>&1; then die "ID $CTID is already in use."; fi
-  HN=$(input "Hostname" "Container Hostname:" "$HN")
-  CORES=$(input "CPU Cores" "Number of vCPU cores:" "$CORES"); num "$CORES" "CPU cores"
-  RAM=$(input "Memory" "RAM in MB:" "$RAM"); num "$RAM" "RAM"
-  DISK=$(input "Disk Size" "Root disk size in GB:" "$DISK"); num "$DISK" "Disk size"
-  BRIDGE=$(input "Network Bridge" "Bridge interface:" "$BRIDGE")
-  NET=$(input "IPv4 Network" "Enter 'dhcp' or static CIDR (e.g. 192.168.178.68/24):" "$NET")
-  if [ "$NET" != "dhcp" ]; then
-    GATE=$(input "Gateway" "IPv4 Gateway (e.g. 192.168.178.1):" "")
-    DNS=$(input "DNS Server" "DNS Server (e.g. 192.168.178.67 for AdGuard Home):" "")
+  HN=$(input "Hostname" "Hostname:" "$HN")
+  CORES=$(input "CPU" "CPU cores:" "$CORES"); num "$CORES" "CPU cores"
+  RAM=$(input "RAM" "RAM in MB (2048 recommended for Next.js build):" "$RAM"); num "$RAM" "RAM"
+  DISK=$(input "Disk" "Disk size in GB:" "$DISK"); num "$DISK" "Disk size"
+  BRIDGE=$(input "Network" "Bridge:" "$BRIDGE")
+  NET=$(input "Network" "IPv4: dhcp, or a static address with prefix (e.g. 192.168.178.68/24):" "$NET")
+  if [ "$NET" != dhcp ]; then
+    [[ "$NET" =~ ^[0-9.]+/[0-9]+$ ]] || die "Static IP needs a prefix, e.g. 192.168.178.68/24."
+    GATE=$(input "Network" "Gateway (e.g. 192.168.178.1):" "")
+    DNS=$(input "Network" "DNS server (empty = same as the Proxmox host):" "")
   fi
-  VLAN=$(input "VLAN" "VLAN Tag (leave empty for none):" "")
-  yesno "Unprivileged LXC" "Create as unprivileged container with nesting=1? (Recommended)" || UNPRIV=0
-  PW=$(secret "Root Password" "Optional root password for console login (empty = use 'pct enter $CTID'):")
+  VLAN=$(input "Network" "VLAN tag (empty = none):" "")
+  [ -z "$VLAN" ] || num "$VLAN" "VLAN tag"
+  yesno "Container type" "Unprivileged container? (recommended)" || UNPRIV=0
+  PW=$(secret "Root password" "Root password for the console (empty = no password, use 'pct enter $CTID'):")
+  PUBLIC_DOMAIN=$(input "Zero-Trust Domain" "Cloudflare Zero-Trust domain for the panel:" "$PUBLIC_DOMAIN")
+  ADGUARD_URL=$(input "AdGuard Home URL" "Local AdGuard Home address for 1:1 bidirectional sync:" "$ADGUARD_URL")
+  yesno "Updates" "Update the panel automatically? (checks GitHub every 15 minutes)" || AUTOUPDATE=0
 fi
 
-# ---------- Interactive Prompts for Tailscale & Cloudflare Tunnel ----------
-TS_KEY=$(whiptail --backtitle "$TITLE" --title "1/2 · Tailscale Auth-Key" --cancel-button "Skip" --passwordbox \
-  "Paste your Tailscale Auth-Key (e.g. tskey-auth-...).\n\nGenerate one at: login.tailscale.com/admin/settings/keys\n(Leave empty and press Enter to authenticate manually later)." 13 74 3>&1 1>&2 2>&3) || TS_KEY=""
+# ---------- Optional Secrets (Tailscale & Cloudflare Tunnel) ----------
+TS_KEY=$(whiptail --backtitle "$TITLE" --title "Tailscale (optional) 1/2" --cancel-button "Skip" --passwordbox \
+  "Paste your Tailscale Auth-Key (tskey-auth-...) for direct fallback VPN access.\n\nGet one at: login.tailscale.com/admin/settings/keys\nLeave empty and press Enter to skip (you can run 'tailscale up' later)." 13 74 3>&1 1>&2 2>&3) || TS_KEY=""
 TS_KEY="${TS_KEY//[[:space:]]/}"
 
-CF_TOKEN=$(whiptail --backtitle "$TITLE" --title "2/2 · Cloudflare Tunnel Token" --cancel-button "Skip" --passwordbox \
-  "Paste your Cloudflare Zero-Trust Tunnel Token for https://${PUBLIC_DOMAIN}.\n\nFind it in Cloudflare One -> Networks -> Tunnels.\n(Leave empty to configure later in /opt/network/.env)." 13 74 3>&1 1>&2 2>&3) || CF_TOKEN=""
+CF_TOKEN=$(whiptail --backtitle "$TITLE" --title "Cloudflare Tunnel (optional) 2/2" --cancel-button "Skip" --passwordbox \
+  "Paste your Cloudflare Zero-Trust Tunnel Token for https://${PUBLIC_DOMAIN}.\n\nGet it at: one.dash.cloudflare.com -> Networks -> Tunnels.\nLeave empty and press Enter to skip (you can add it to /opt/network/.env later)." 13 74 3>&1 1>&2 2>&3) || CF_TOKEN=""
 CF_TOKEN="${CF_TOKEN//[[:space:]]/}"
 
-ROOTFS=$(pick_storage rootdir "container root disk")
-TMPL_STORE=$(pick_storage vztmpl "Debian 12 template")
+ROOTFS=$(pick_storage rootdir "container disk")
+TMPL_STORE=$(pick_storage vztmpl "Debian template")
 
-banner
-say "Selected Storage: RootFS on '$ROOTFS', Template on '$TMPL_STORE'"
+clear 2>/dev/null || true
+printf "\n  ${c_b}%s${c_off}\n\n" "$TITLE"
+say "Disk on $ROOTFS, template on $TMPL_STORE"
 
-# ---------- Debian 12 Template ----------
-info "Checking Debian 12 LXC template..."
+info "Looking for the Debian 12 template"
 pveam update >/dev/null 2>&1 || true
 TMPL=$(pveam available --section system 2>/dev/null | awk '{print $2}' | grep -E '^debian-12-standard' | sort -V | tail -1 || true)
-[ -n "$TMPL" ] || die "Could not find debian-12-standard template via pveam."
+[ -n "$TMPL" ] || TMPL=$(pveam available --section system 2>/dev/null | awk '{print $2}' | grep -E '^debian-[0-9]+-standard' | sort -V | tail -1 || true)
+[ -n "$TMPL" ] || die "No Debian template found (pveam available). Is the host online?"
 if ! pveam list "$TMPL_STORE" 2>/dev/null | grep -q "$TMPL"; then
-  info "Downloading $TMPL..."
+  info "Downloading $TMPL"
   pveam download "$TMPL_STORE" "$TMPL" >/dev/null
 fi
-say "Template ready: $TMPL"
+say "Template $TMPL"
 
-# ---------- Create LXC Container ----------
-net_str="name=eth0,bridge=${BRIDGE},ip=${NET}"
-[ -n "$GATE" ] && net_str="${net_str},gw=${GATE}"
-[ -n "$VLAN" ] && net_str="${net_str},tag=${VLAN}"
-
-pct_opts=(
-  --hostname "$HN"
-  --cores "$CORES"
-  --memory "$RAM"
-  --swap 512
-  --rootfs "${ROOTFS}:${DISK}"
-  --net0 "$net_str"
-  --ostype debian
-  --unprivileged "$UNPRIV"
-  --features "nesting=1,keyctl=1"
-  --onboot 1
-  --tags "$TAG"
-  --description "Labtoso Zero-Trust Network Control Center (${PUBLIC_DOMAIN})"
+net="name=eth0,bridge=$BRIDGE,ip=$NET"
+[ -n "$GATE" ] && net="$net,gw=$GATE"
+[ -n "$VLAN" ] && net="$net,tag=$VLAN"
+opts=(
+  --hostname "$HN" --cores "$CORES" --memory "$RAM" --swap 512
+  --rootfs "$ROOTFS:$DISK" --net0 "$net" --ostype debian
+  --unprivileged "$UNPRIV" --features "nesting=1,keyctl=1" --onboot 1 --tags "$TAG"
+  --description "Labtoso Network Control Suite, installing ..."
 )
-[ -n "$DNS" ] && pct_opts+=(--nameserver "$DNS")
-[ -n "$PW" ] && pct_opts+=(--password "$PW")
+[ -n "$DNS" ] && opts+=(--nameserver "$DNS")
+[ -n "$PW" ] && opts+=(--password "$PW")
 
-# Enable /dev/net/tun inside LXC so Tailscale WireGuard works out of the box
-info "Creating Debian 12 LXC container $CTID ($HN)..."
-pct create "$CTID" "${TMPL_STORE}:vztmpl/${TMPL}" "${pct_opts[@]}" >/dev/null
+info "Creating container $CTID"
+pct create "$CTID" "$TMPL_STORE:vztmpl/$TMPL" "${opts[@]}" >/dev/null
 
+# Enable /dev/net/tun so Tailscale works inside unprivileged LXC
 LXC_CONF="/etc/pve/lxc/${CTID}.conf"
 if [ -f "$LXC_CONF" ] && ! grep -q "/dev/net/tun" "$LXC_CONF"; then
   cat >> "$LXC_CONF" <<'TUNEOF'
@@ -251,59 +271,49 @@ lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file
 TUNEOF
 fi
 
+say "Container $CTID ($HN) created"
 pct start "$CTID"
-say "Container $CTID started (Unprivileged=$UNPRIV, Nesting=1, TUN enabled)"
 
-info "Waiting for container network connectivity..."
+info "Waiting for the network"
 for i in $(seq 1 30); do
   pct exec "$CTID" -- getent hosts deb.debian.org >/dev/null 2>&1 && break
-  [ "$i" -eq 30 ] && die "Container $CTID has no internet connectivity. Check bridge/IP settings."
+  [ "$i" -eq 30 ] && die "The container has no internet connection. Check bridge/IP settings (pct config $CTID)."
   sleep 2
 done
-say "Network online inside container $CTID"
+say "Network ready"
 
-# ---------- Push Secrets via Root-Only File ----------
-tmp_sec=$(mktemp)
-chmod 600 "$tmp_sec"
-printf 'TS_KEY=%q\nCF_TOKEN=%q\nPUBLIC_DOMAIN=%q\nALLOWED_EMAIL=%q\n' \
-  "$TS_KEY" "$CF_TOKEN" "$PUBLIC_DOMAIN" "$ALLOWED_EMAIL" > "$tmp_sec"
-pct push "$CTID" "$tmp_sec" /root/.network-setup --perms 600
-rm -f "$tmp_sec"
-unset TS_KEY CF_TOKEN
+info "Preparing Debian 12 & syncing host timezone"
+pct exec "$CTID" -- bash -c "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq >/dev/null && apt-get -y -qq -o Dpkg::Use-Pty=0 upgrade >/dev/null 2>&1 && apt-get install -y -qq -o Dpkg::Use-Pty=0 curl wget git jq openssl ca-certificates gnupg iptables >/dev/null 2>&1"
+HOST_TZ=$(cat /etc/timezone 2>/dev/null || timedatectl show -p Timezone --value 2>/dev/null || true)
+[ -n "$HOST_TZ" ] && pct exec "$CTID" -- bash -c "ln -sf /usr/share/zoneinfo/$HOST_TZ /etc/localtime && echo $HOST_TZ > /etc/timezone" 2>/dev/null || true
+say "Debian up to date"
 
-# ---------- Provision Node.js LTS, Git, Docker, Tailscale & Network Repo ----------
-info "Installing Node.js 22 LTS, Git, Docker, Tailscale & Cloudflared in CT $CTID..."
+# Secrets go in via a root-only file, so they never show up in the host process list
+tmp=$(mktemp); chmod 600 "$tmp"
+printf 'TS_KEY=%q\nCF_TOKEN=%q\nPUBLIC_DOMAIN=%q\nALLOWED_EMAIL=%q\nADGUARD_URL=%q\nAUTOUPDATE=%q\n' \
+  "$TS_KEY" "$CF_TOKEN" "$PUBLIC_DOMAIN" "$ALLOWED_EMAIL" "$ADGUARD_URL" "$AUTOUPDATE" > "$tmp"
+pct push "$CTID" "$tmp" /root/.network-setup --perms 600
+rm -f "$tmp"; unset TS_KEY CF_TOKEN
+
+info "Installing Node.js 22 LTS, Docker, Tailscale, Cloudflared & building Network Control Suite (takes ~2 minutes)"
 pct exec "$CTID" -- bash -c '
   set -e
   export DEBIAN_FRONTEND=noninteractive
-  . /root/.network-setup
-  rm -f /root/.network-setup
+  . /root/.network-setup; rm -f /root/.network-setup
 
-  apt-get update -qq >/dev/null
-  apt-get -y -qq -o Dpkg::Use-Pty=0 upgrade >/dev/null 2>&1
-  apt-get install -y -qq -o Dpkg::Use-Pty=0 curl wget git jq openssl ca-certificates gnupg apt-transport-https iptables >/dev/null 2>&1
-
-  # 1. Node.js 22 LTS & pnpm
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null 2>&1
   apt-get install -y -qq nodejs >/dev/null 2>&1
   npm install -g pnpm --loglevel=error >/dev/null 2>&1 || true
 
-  # 2. Docker & Docker Compose
   curl -fsSL https://get.docker.com | sh >/dev/null 2>&1 || true
-
-  # 3. Tailscale
   curl -fsSL https://tailscale.com/install.sh | sh >/dev/null 2>&1 || true
   systemctl enable -q --now tailscaled 2>/dev/null || true
-  if [ -n "$TS_KEY" ]; then
-    tailscale up --authkey="$TS_KEY" --hostname="'"$HN"'" --accept-routes >/dev/null 2>&1 || true
-  fi
+  [ -n "$TS_KEY" ] && tailscale up --authkey="$TS_KEY" --hostname="'"$HN"'" --accept-routes >/dev/null 2>&1 || true
 
-  # 4. Cloudflared
   curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
   echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared bookworm main" > /etc/apt/sources.list.d/cloudflared.list
   apt-get update -qq >/dev/null && apt-get install -y -qq cloudflared >/dev/null 2>&1 || true
 
-  # 5. Clone Labtoso/Network & configure .env
   rm -rf "'"$INSTALL_DIR"'"
   git clone -q --depth 1 --branch "'"$BRANCH"'" "'"$REPO_URL"'" "'"$INSTALL_DIR"'"
   cd "'"$INSTALL_DIR"'"
@@ -312,42 +322,38 @@ pct exec "$CTID" -- bash -c '
   sed -i "s|^NEXT_PUBLIC_DOMAIN=.*|NEXT_PUBLIC_DOMAIN=${PUBLIC_DOMAIN}|" .env
   sed -i "s|^ALLOWED_EMAIL=.*|ALLOWED_EMAIL=${ALLOWED_EMAIL}|" .env
   sed -i "s|^NEXT_PUBLIC_ALLOWED_EMAIL=.*|NEXT_PUBLIC_ALLOWED_EMAIL=${ALLOWED_EMAIL}|" .env
+  sed -i "s|^ADGUARD_URL=.*|ADGUARD_URL=${ADGUARD_URL}|" .env
   [ -n "$CF_TOKEN" ] && sed -i "s|^CLOUDFLARE_TUNNEL_TOKEN=.*|CLOUDFLARE_TUNNEL_TOKEN=${CF_TOKEN}|" .env
   chmod 600 .env
-  chmod +x manage.sh admin.sh
+  chmod +x manage.sh admin.sh deploy/*.sh 2>/dev/null || true
 
-  # 6. Run ./manage.sh install
-  ./manage.sh install
+  ./manage.sh install >/dev/null
+
+  if [ "$AUTOUPDATE" = 1 ]; then
+    cp deploy/network-update.service /etc/systemd/system/network-update.service
+    cp deploy/network-update.timer /etc/systemd/system/network-update.timer
+    systemctl daemon-reload
+    systemctl enable -q --now network-update.timer
+  fi
 '
 
-say "Provisioning and build inside CT $CTID complete!"
-
-# ---------- Gather Final Telemetry & Write Proxmox Container Notes ----------
-LOCAL_IP=$(pct exec "$CTID" -- hostname -I 2>/dev/null | awk '{print $1}')
-TS_IP=$(pct exec "$CTID" -- tailscale ip -4 2>/dev/null | head -n1 || echo "pending")
-NODE_V=$(pct exec "$CTID" -- node -v 2>/dev/null || echo "v22.x")
-NPM_V=$(pct exec "$CTID" -- npm -v 2>/dev/null || echo "10.x")
-
-NOTES_MD="## 🛡️ Labtoso Network Control Center
-
-- **Zero-Trust Public URL:** [https://${PUBLIC_DOMAIN}](https://${PUBLIC_DOMAIN})
-- **Protected Owner Account:** \`${ALLOWED_EMAIL}\` (Cloudflare Access · Google OAuth)
-- **Local LAN Address:** \`http://${LOCAL_IP:-127.0.0.1}:3000\`
-- **Tailscale Mesh IP:** \`http://${TS_IP:-pending}:3000\`
-- **Runtime:** Node.js \`${NODE_V}\` · npm \`${NPM_V}\`
-- **Manage CLI:** \`pct exec ${CTID} -- /opt/network/manage.sh info\`"
-
-pct set "$CTID" --description "$NOTES_MD" >/dev/null 2>&1 || true
+install_notes
+IP=$(pct exec "$CTID" -- hostname -I 2>/dev/null | awk '{print $1}')
+TS_IP=$(pct exec "$CTID" -- tailscale ip -4 2>/dev/null | head -n1 || true)
+NODE_V=$(pct exec "$CTID" -- node -v 2>/dev/null || echo "v22")
 
 echo
-printf "  ${c_ok}${c_b}┌──────────────────────────────────────────────────────────────────────┐${c_off}\n"
-printf "  ${c_ok}${c_b}│ ✓ LABTOSO NETWORK CONTROL CENTER SUCCESSFULLY DEPLOYED               │${c_off}\n"
-printf "  ${c_ok}${c_b}└──────────────────────────────────────────────────────────────────────┘${c_off}\n"
-printf "    • Proxmox LXC Container : ${c_b}CT %s (%s)${c_off}\n" "$CTID" "$HN"
-printf "    • Node.js Environment   : ${c_b}Node %s (npm %s)${c_off}\n" "$NODE_V" "$NPM_V"
-printf "    • Local LAN Access      : ${c_ok}http://%s:3000${c_off}\n" "${LOCAL_IP:-127.0.0.1}"
-printf "    • Tailscale Fallback    : ${c_ok}http://%s:3000${c_off}\n" "${TS_IP:-awaiting-auth}"
-printf "    • Zero-Trust Public URL : ${c_ok}${c_b}https://%s${c_off}\n" "$PUBLIC_DOMAIN"
-printf "    • Hard Access Policy    : ${c_b}%s${c_off}\n\n" "$ALLOWED_EMAIL"
-printf "    • Management CLI        : ${c_dim}pct exec %s -- /opt/network/manage.sh info${c_off}\n" "$CTID"
-printf "    • Live Logs             : ${c_dim}pct exec %s -- /opt/network/manage.sh logs${c_off}\n\n" "$CTID"
+printf " ${c_ok}${c_b}Labtoso Network Control Suite läuft in Container %s (Node %s)${c_off}\n" "$CTID" "$NODE_V"
+show_backend "$CTID"
+echo
+[ -n "$IP" ] && echo "  Container IP:  http://$IP:3000"
+[ -n "$TS_IP" ] && echo "  Tailscale IP:  http://$TS_IP:3000"
+echo "  Owner Policy:  $ALLOWED_EMAIL (Cloudflare Zero Trust · Google OAuth)"
+echo
+echo "  Info:    pct exec $CTID -- /opt/network/manage.sh info"
+echo "  Logs:    pct exec $CTID -- /opt/network/manage.sh logs"
+echo "  Shell:   pct enter $CTID"
+echo "  Update:  run this script again (or it updates itself every 15 minutes)"
+echo "  Remove:  pct stop $CTID && pct destroy $CTID"
+echo "           (notes helper on the host: systemctl disable --now network-notes.timer)"
+echo
