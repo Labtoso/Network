@@ -27,7 +27,7 @@ import {
   BlockPageStudioConfig,
   ClientDeviceProfile,
   GlobalPolicySettings,
-} from "@/lib/db";
+} from "@/lib/network-state";
 import { ALLOWED_OWNER_EMAIL, PUBLIC_ZERO_TRUST_DOMAIN } from "@/lib/auth";
 
 interface BlockStudioProps {

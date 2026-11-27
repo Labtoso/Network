@@ -5,6 +5,7 @@
   "description": "Zero-Trust Network, Device & Parental Control Suite with AdGuard Home Sync, Roaming DoH/DoT Anti-Bypass, Custom Block Studio & Proxmox LXC Auto-Installer.",
   "scripts": {
     "dev": "next dev -p 3000",
+    "prebuild": "node deploy/preserve-setup-state.mjs",
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "next lint",

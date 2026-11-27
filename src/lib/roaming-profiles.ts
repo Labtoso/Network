@@ -1,4 +1,4 @@
-import { ClientDeviceProfile, GlobalPolicySettings } from "@/lib/db";
+import { ClientDeviceProfile, GlobalPolicySettings } from "@/lib/network-state";
 import { PUBLIC_ZERO_TRUST_DOMAIN } from "@/lib/auth";
 
 /**

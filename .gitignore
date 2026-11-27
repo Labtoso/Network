@@ -36,3 +36,10 @@ _old/
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local installation state
+/data/
+/certs/
+/prisma/*.db*
+/.network-update.lock
+/.network-update.*/

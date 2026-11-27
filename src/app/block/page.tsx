@@ -10,7 +10,7 @@ import {
   THEME_STORAGE_KEY,
   ThemeId,
 } from "@/lib/themes";
-import { BlockPageStudioConfig, INITIAL_STATE } from "@/lib/db";
+import { BlockPageStudioConfig, INITIAL_STATE } from "@/lib/network-state";
 
 function BlockPageContent() {
   const searchParams = useSearchParams();

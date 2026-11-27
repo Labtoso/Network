@@ -8,6 +8,7 @@ services:
     ports:
       - "${PORT:-3000}:3000"
     environment:
+      - NETWORK_DATA_DIR=/app/data
       - NODE_ENV=production
       - PORT=3000
       - HOSTNAME=0.0.0.0
@@ -16,6 +17,9 @@ services:
       - ALLOWED_EMAIL=${ALLOWED_EMAIL:-sebirauch2022@gmail.com}
       - NEXT_PUBLIC_ALLOWED_EMAIL=${ALLOWED_EMAIL:-sebirauch2022@gmail.com}
       - CF_ZERO_TRUST_STRICT=${CF_ZERO_TRUST_STRICT:-false}
+    volumes:
+      - network-data:/app/data
+      - network-certs:/app/certs
     networks:
       - labtoso-net
 
@@ -34,3 +38,7 @@ services:
 networks:
   labtoso-net:
     driver: bridge
+
+volumes:
+  network-data:
+  network-certs:

@@ -35,7 +35,7 @@ import {
   ClientDeviceProfile,
   GlobalPolicySettings,
   UnblockRequestItem,
-} from "@/lib/db";
+} from "@/lib/network-state";
 import { generateDeterministicQrMatrix } from "@/lib/roaming-profiles";
 import { PUBLIC_ZERO_TRUST_DOMAIN } from "@/lib/auth";
 

@@ -5,4 +5,5 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/network/deploy/network-update.sh
+Environment=NETWORK_DIR=/opt/network
+ExecStart=/bin/bash /opt/network/deploy/network-update.sh

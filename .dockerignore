@@ -1,0 +1,11 @@
+.git
+.next
+node_modules
+.env
+.env.*
+data
+certs
+prisma/*.db*
+.network-update.*
+*.key
+*.pem

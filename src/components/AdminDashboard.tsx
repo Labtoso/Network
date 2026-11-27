@@ -63,7 +63,7 @@ import {
   ServiceMonitorItem,
 } from "@/lib/infrastructure";
 import { ALLOWED_OWNER_EMAIL, PUBLIC_ZERO_TRUST_DOMAIN } from "@/lib/auth";
-import { INITIAL_STATE, NetworkControlState } from "@/lib/db";
+import { INITIAL_STATE, NetworkControlState } from "@/lib/network-state";
 
 interface SystemTelemetry {
   nodeVersion: string;

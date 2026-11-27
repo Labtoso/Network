@@ -27,11 +27,11 @@ import {
   Zap,
 } from "lucide-react";
 import { ThemeConfig } from "@/lib/themes";
-import { AdGuardMirrorState, ClientDeviceProfile } from "@/lib/db";
+import { AdGuardMirrorState, ClientDeviceProfile } from "@/lib/network-state";
 import {
   ADGUARD_SERVICES_CATALOG,
   AdGuardQueryLogEntry,
-} from "@/lib/adguard-sync";
+} from "@/lib/adguard-model";
 
 interface AdGuardMirrorSuiteProps {
   theme: ThemeConfig;

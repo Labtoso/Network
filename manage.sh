@@ -258,54 +258,7 @@ CFUNIT
 cmd_update() {
   banner
   cd "$APP_DIR"
-  git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
-
-  if [ -x "${APP_DIR}/deploy/network-update.sh" ]; then
-    NETWORK_DIR="$APP_DIR" "${APP_DIR}/deploy/network-update.sh"
-    cmd_info
-    return 0
-  fi
-
-  say "Pulling latest updates from Git repository (preserving .env & data/)..."
-  local tmp_bak
-  tmp_bak="$(mktemp -d)"
-  [ -f ".env" ] && cp -a ".env" "$tmp_bak/.env"
-  [ -d "data" ] && cp -a "data" "$tmp_bak/data"
-  [ -d "certs" ] && cp -a "certs" "$tmp_bak/certs"
-
-  git fetch --all --prune
-  git reset --hard origin/main
-
-  [ -f "$tmp_bak/.env" ] && cp -a "$tmp_bak/.env" ".env"
-  [ -d "$tmp_bak/data" ] && { mkdir -p data; cp -a "$tmp_bak/data/." "data/"; }
-  [ -d "$tmp_bak/certs" ] && { mkdir -p certs; cp -a "$tmp_bak/certs/." "certs/"; }
-  rm -rf "$tmp_bak"
-
-  say "Updating dependencies, migrating SQLite & rebuilding project..."
-  if [ -f "package-lock.json" ]; then
-    npm ci --no-audit --no-fund --loglevel=error
-  else
-    npm install --no-audit --no-fund --loglevel=error
-  fi
-  DATABASE_URL="file:./dev.db" npx prisma generate >/dev/null 2>&1 || true
-  DATABASE_URL="file:./dev.db" npx prisma db push --skip-generate >/dev/null 2>&1 || true
-  npm run build
-
-  if [ -d ".next/standalone" ]; then
-    mkdir -p .next/standalone/.next
-    cp -r public .next/standalone/ 2>/dev/null || true
-    cp -r .next/static .next/standalone/.next/ 2>/dev/null || true
-  fi
-
-  if command -v systemctl >/dev/null 2>&1 && systemctl is-enabled "$APP_NAME" >/dev/null 2>&1; then
-    say "Restarting ${APP_NAME}.service..."
-    systemctl restart "$APP_NAME"
-  elif command -v docker >/dev/null 2>&1 && [ -f "docker-compose.yml" ] && docker compose ps -q 2>/dev/null | grep -q .; then
-    say "Restarting Docker Compose stack..."
-    docker compose up -d --build
-  fi
-
-  say "Update complete!"
+  NETWORK_DIR="$APP_DIR" bash deploy/network-update.sh
   cmd_info
 }
 

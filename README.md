@@ -27,7 +27,7 @@ Das Projekt folgt exakt dem gleichen strukturierten CLI-Workflow wie die Bot-Rep
 
 ```bash
 ./manage.sh install     # Prüft System/Node.js, generiert Root-CA, migriert SQLite (Prisma), baut & startet Services
-./manage.sh update      # Zieht git pull, aktualisiert Pakete/Prisma-DB, baut neu & startet nahtlos durch
+./manage.sh update      # Baut GitHub-Updates vorab und startet den Dienst bei Erfolg neu
 ./manage.sh info        # Zeigt Node-Version, PID, RAM/CPU, LAN-IP, Tailscale-IP, Roaming-DoH & Cloudflare-Tunnel
 ./manage.sh status      # Prüft den Systemd-/Container-Dienststatus im Detail
 ./manage.sh logs        # Streamt die Live-Logs des Admin-Panels & Cloudflare-Tunnels
@@ -133,3 +133,16 @@ cp .env.example .env
 # CLOUDFLARE_TUNNEL_TOKEN in .env eintragen
 docker compose up -d --build
 ```
+
+### Updates und Setup-Daten
+
+Der Proxmox-Installer aktiviert einen systemd-Timer, der etwa alle drei Minuten
+nach neuen Commits sucht. Ein fehlgeschlagener Build lässt die installierte
+Version aktiv und wird beim nächsten Lauf erneut versucht. Updates behalten
+die lokale Konfiguration und übernehmen bisherigen Assistentenstatus aus dem
+alten Standalone-Verzeichnis nach `data/network-state.json`.
+
+Docker Compose speichert Panel-Daten und Zertifikate in den benannten
+Volumes `network-data` und `network-certs`. Bei einem bereits laufenden
+Container ohne Volumes vor der ersten Umstellung `/app/data` und
+`/app/certs` sichern. Der systemd-Timer gehört zur nativen Installation.
